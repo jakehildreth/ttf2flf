@@ -223,3 +223,11 @@ Some fonts need explicit `-PixelSize` for best results:
 - [FIGlet Font Specification](http://www.jave.de/figlet/figfont.html)
 - [SixLabors.Fonts](https://github.com/SixLabors/Fonts)
 - [FIGlet](http://www.figlet.org/)
+
+## License
+
+MIT License w/Commons Clause - see [LICENSE](LICENSE) file for details.
+
+---
+
+Made with 💜 by [Jake Hildreth](https://jakehildreth.com)
