@@ -1,4 +1,5 @@
 function ConvertTo-FLF {
+    [alias('ttf2flf')]
     <#
     .SYNOPSIS
         Converts a TrueType font to FIGlet font format.
