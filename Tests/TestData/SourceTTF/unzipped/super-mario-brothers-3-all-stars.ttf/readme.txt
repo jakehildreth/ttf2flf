@@ -1,13 +1,13 @@
 ﻿The font file in this archive was created using Fontstruct the free, online
 font-building tool.
-This font was created by “blu.”.
+This font was created by Patrick H. Lauke.
 This font has a homepage where this archive and other versions may be found:
-https://fontstruct.com/fontstructions/show/2117744
+https://fontstruct.com/fontstructions/show/2806203
 [ancestry]
 Try Fontstruct at https://fontstruct.com
 It’s easy and it’s fun.
 
-Fontstruct is copyright ©2022-2025 Rob Meek
+Fontstruct is copyright ©2026 Rob Meek
 
 LEGAL NOTICE:
 In using this font you must comply with the licensing terms described in the

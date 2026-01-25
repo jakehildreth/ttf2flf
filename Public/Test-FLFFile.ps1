@@ -18,6 +18,8 @@ function Test-FLFFile {
         FLF content as a string (alternative to file path).
     .PARAMETER Strict
         Enables strict validation including warnings as failures.
+    .PARAMETER ShowExample
+        Renders example text using the FLF font with figlet (requires figlet to be installed).
     .EXAMPLE
         Test-FLFFile -Path 'myfont.flf'
 
@@ -26,6 +28,10 @@ function Test-FLFFile {
         Test-FLFFile -Path 'myfont.flf' -Strict
 
         Validates with strict mode - warnings become errors.
+    .EXAMPLE
+        Test-FLFFile -Path 'myfont.flf' -ShowExample
+
+        Validates the font and displays rendered example text.
     .EXAMPLE
         Get-ChildItem *.flf | Test-FLFFile | Where-Object { -not $_.IsValid }
 
@@ -56,7 +62,10 @@ function Test-FLFFile {
         [string]$Content,
 
         [Parameter()]
-        [switch]$Strict
+        [switch]$Strict,
+
+        [Parameter()]
+        [switch]$ShowExample
     )
 
     process {
@@ -222,12 +231,27 @@ function Test-FLFFile {
             $isValid = $false
         }
 
-        [PSCustomObject]@{
+        $result = [PSCustomObject]@{
             Path     = $sourcePath
             IsValid  = $isValid
             Errors   = $errors.ToArray()
             Warnings = $warnings.ToArray()
             Header   = $headerInfo
         }
+
+        # Render example if requested and valid
+        if ($ShowExample -and $isValid -and $PSCmdlet.ParameterSetName -eq 'Path') {
+            $figletCommand = Get-Command -Name 'figlet' -ErrorAction SilentlyContinue
+            if ($figletCommand) {
+                Write-Host "`n[Example rendered with $([System.IO.Path]::GetFileName($sourcePath))]" -ForegroundColor Cyan
+                $exampleText = 'Sphinx of black quartz, judge my vow'
+                & figlet -f $sourcePath -w 120 $exampleText
+                Write-Host ''
+            } else {
+                Write-Warning 'figlet not found. Install with: brew install figlet'
+            }
+        }
+
+        $result
     }
 }
