@@ -1,3 +1,4 @@
+![ttf2flf logo, which is just the TrueType logo beside the Figlet logo on a white background.](ttf2flf.png)
 # ttf2flf
 
 Convert TrueType fonts (.ttf) to FIGlet font files (.flf) for ASCII art text rendering.
