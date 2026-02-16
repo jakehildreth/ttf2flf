@@ -41,6 +41,14 @@ function ConvertTo-FLF {
         The pixel height to render at when using -PixelPerfect mode.
         Common values: 8, 16, 24, 32. Default is 8.
         The FLF output height will be PixelSize/2 rows.
+    .PARAMETER UnitsPerPixel
+        Font units per pixel for bitmap fonts. If specified, overrides
+        automatic detection by setting base em size = UnitsPerEm / UnitsPerPixel.
+        Common values: 50, 25, 100. Example: DepartureMono uses 50.
+    .PARAMETER NoTrim
+        Disables trimming of empty rows from top and bottom in PixelPerfect mode.
+        Use this to preserve the font's original vertical spacing, especially for
+        bitmap fonts with precise metrics where spacing is part of the design.
     .PARAMETER PassThru
         Returns the FLF content as a string instead of writing to a file.
     .EXAMPLE
@@ -118,6 +126,13 @@ function ConvertTo-FLF {
         [int]$PixelSize,
 
         [Parameter()]
+        [ValidateRange(1, 1000)]
+        [int]$UnitsPerPixel,
+
+        [Parameter()]
+        [switch]$NoTrim,
+
+        [Parameter()]
         [switch]$PassThru
     )
 
@@ -172,10 +187,28 @@ function ConvertTo-FLF {
 
                 # Determine rendering mode and calculate dimensions
                 if ($PixelPerfect) {
-                    # Auto-detect pixel height if not specified
+                    # Auto-detect pixel height and width if not specified
                     if (-not $PSBoundParameters.ContainsKey('PixelSize')) {
-                        $PixelSize = Get-BitmapFontPixelHeight -FontFamily $fontFamily
-                        Write-Verbose "[+] Auto-detected pixel height: $PixelSize"
+                        $detectParams = @{ FontFamily = $fontFamily }
+                        if ($PSBoundParameters.ContainsKey('UnitsPerPixel')) {
+                            $detectParams['UnitsPerPixel'] = $UnitsPerPixel
+                        }
+                        $detectedSize = Get-BitmapFontPixelHeight @detectParams
+                        $PixelSize = $detectedSize.Height
+                        $detectedWidth = $detectedSize.Width
+                        Write-Verbose "[+] Auto-detected pixel size: $($PixelSize)h × ${detectedWidth}w"
+                    } else {
+                        # Height specified, detect optimal width for that height
+                        $detectParams = @{ 
+                            FontFamily = $fontFamily
+                            Height = $PixelSize
+                        }
+                        if ($PSBoundParameters.ContainsKey('UnitsPerPixel')) {
+                            $detectParams['UnitsPerPixel'] = $UnitsPerPixel
+                        }
+                        $detectedSize = Get-BitmapFontPixelHeight @detectParams
+                        $detectedWidth = $detectedSize.Width
+                        Write-Verbose "[+] Detected optimal width for ${PixelSize}h: ${detectedWidth}w"
                     }
                     
                     # Pixel-perfect mode: render at exact pixel size
@@ -186,10 +219,11 @@ function ConvertTo-FLF {
                     # Standard mode: render at larger size for quality, then downsample
                     $fontSize = [Math]::Max(48, $Height * 8)
                     $outputHeight = $Height
+                    $detectedWidth = 0
                 }
 
                 $font = $fontFamily.CreateFont($fontSize)
-                Write-Verbose "[+] Font loaded: $($compatibility.FontName) at ${fontSize}pt"
+                Write-Verbose "[+] Font loaded: $($compatibility.FontName) rendering at size ${fontSize}"
 
                 # First pass: render all characters to find max width (for monospace mode)
                 $characterData = [System.Collections.Generic.Dictionary[int, PSCustomObject]]::new()
@@ -204,8 +238,12 @@ function ConvertTo-FLF {
 
                     try {
                         if ($PixelPerfect) {
-                            # Pixel-perfect: render at native size, get raw pixels
-                            $bitmap = Get-GlyphBitmap -Font $font -Character $char -Height $PixelSize -PixelPerfect
+                            # Pixel-perfect: render at native size with detected width, get raw pixels
+                            if ($detectedWidth -gt 0) {
+                                $bitmap = Get-GlyphBitmap -Font $font -FontCollection $fontCollection -Character $char -Height $PixelSize -Width $detectedWidth -PixelPerfect
+                            } else {
+                                $bitmap = Get-GlyphBitmap -Font $font -FontCollection $fontCollection -Character $char -Height $PixelSize -PixelPerfect
+                            }
                         } else {
                             $bitmap = Get-GlyphBitmap -Font $font -Character $char -Height $Height
                         }
@@ -263,8 +301,8 @@ function ConvertTo-FLF {
                     }
                 }
 
-                # In pixel-perfect mode, trim empty rows from top and bottom
-                if ($PixelPerfect -and $flfCharacters.Count -gt 0) {
+                # In pixel-perfect mode, trim empty rows from top and bottom (unless -NoTrim specified)
+                if ($PixelPerfect -and -not $NoTrim -and $flfCharacters.Count -gt 0) {
                     # Use the keys from the dictionary, not the script variable
                     $firstCharCode = ($flfCharacters.Keys | Select-Object -First 1)
                     $rowCount = $flfCharacters[$firstCharCode].Count

@@ -137,28 +137,36 @@ function Get-GlyphBitmap {
                 }
             }
 
-            # For pixel fonts, use the line height to get consistent vertical sizing
-            # Extract pixels from padding to padding+lineHeight
-            $outHeight = [Math]::Min($Height, [Math]::Ceiling($lineHeight))
-            $outWidth = [Math]::Max(1, [Math]::Ceiling($charWidth))
+            # For pixel fonts, extract exactly what was rendered
+            # Use the actual bounding box, not font metrics
+            $outHeight = $maxY - $minY + 1
+            $outWidth = $maxX - $minX + 1
 
             # Apply max width for monospace if specified
-            if ($MaxWidth -gt 0) {
-                $outWidth = $MaxWidth
+            if ($MaxWidth -gt 0 -and $outWidth -lt $MaxWidth) {
+                # Pad to MaxWidth but keep actual content
+                $targetWidth = $MaxWidth
+            } else {
+                $targetWidth = $outWidth
             }
 
             $pixels = [System.Collections.Generic.List[System.Collections.Generic.List[double]]]::new()
 
             for ($y = 0; $y -lt $outHeight; $y++) {
                 $row = [System.Collections.Generic.List[double]]::new()
-                for ($x = 0; $x -lt $outWidth; $x++) {
-                    $srcX = $padding + $x
-                    $srcY = $padding + $y
-                    if ($srcX -ge 0 -and $srcX -lt $imageWidth -and $srcY -ge 0 -and $srcY -lt $imageHeight) {
-                        $pixel = $image[$srcX, $srcY]
-                        $brightness = ($pixel.R + $pixel.G + $pixel.B) / (255.0 * 3)
-                        $row.Add($brightness)
+                for ($x = 0; $x -lt $targetWidth; $x++) {
+                    if ($x -lt $outWidth) {
+                        $srcX = $minX + $x
+                        $srcY = $minY + $y
+                        if ($srcX -ge 0 -and $srcX -lt $imageWidth -and $srcY -ge 0 -and $srcY -lt $imageHeight) {
+                            $pixel = $image[$srcX, $srcY]
+                            $brightness = ($pixel.R + $pixel.G + $pixel.B) / (255.0 * 3)
+                            $row.Add($brightness)
+                        } else {
+                            $row.Add(0.0)
+                        }
                     } else {
+                        # Padding for monospace
                         $row.Add(0.0)
                     }
                 }
@@ -167,7 +175,7 @@ function Get-GlyphBitmap {
 
             [PSCustomObject]@{
                 Character = $Character
-                Width     = $outWidth
+                Width     = $targetWidth
                 Height    = $outHeight
                 Pixels    = $pixels
             }
