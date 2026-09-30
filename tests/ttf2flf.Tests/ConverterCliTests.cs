@@ -173,4 +173,36 @@ public class ConverterCliTests
         Assert.Equal(0, exitCode);
         Assert.Matches(@"^ttf2flf \d{4}\.(?:[1-9]|1[0-2])\.(?:[1-9]|[12]\d|3[01])(?:[01]\d|2[0-3])[0-5]\d$", output.Trim());
     }
+
+    [Fact]
+    public void OutputPathEqualToInput_FailsAndKeepsInputIntact()
+    {
+        using var temp = new TempDir();
+        var input = temp.CopyFixtureFont("font.ttf");
+        var before = File.ReadAllBytes(input);
+
+        var (exitCode, _, error) = TestSupport.RunConverter(input, "-o", input);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("would overwrite the input font", error);
+        Assert.Equal(before, File.ReadAllBytes(input));
+    }
+
+    [Fact]
+    public void OutputPathEqualToInput_ThroughSymlink_Fails()
+    {
+        if (OperatingSystem.IsWindows()) return; // symlinks need privileges on Windows
+
+        using var temp = new TempDir();
+        var real = temp.CopyFixtureFont("real.ttf");
+        var link = temp.File("link.ttf");
+        File.CreateSymbolicLink(link, real);
+        var before = File.ReadAllBytes(real);
+
+        var (exitCode, _, error) = TestSupport.RunConverter(real, "-o", link);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("would overwrite the input font", error);
+        Assert.Equal(before, File.ReadAllBytes(real));
+    }
 }
