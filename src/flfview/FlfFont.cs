@@ -14,10 +14,10 @@ public enum HorizontalLayout
 /// Minimal FIGlet (.flf) font parser. Parses the header, skips comment lines,
 /// then reads the 102 required characters (ASCII 32-126, then German
 /// 196, 214, 220, 228, 246, 252, 223). Endmarks are stripped the way the FIGlet
-/// spec and FIGlet itself do it, and hardblanks are replaced with spaces. Each
-/// glyph's rows are padded to the glyph's own maximum row width so columns align
-/// when concatenated. Only FullWidth fonts are accepted: flfview does not implement
-/// kerning or smushing, so other layouts would not match FIGlet's output.
+/// spec and FIGlet itself do it, and hardblanks are replaced with spaces. Glyph rows
+/// are kept as written; FIGlet does not pad them. Only FullWidth fonts are accepted:
+/// flfview does not implement kerning or smushing, so other layouts would not match
+/// FIGlet's output.
 /// </summary>
 public sealed class FlfFont
 {
@@ -242,12 +242,8 @@ public sealed class FlfFont
                 rows[r] = row.Replace(hardblank, ' ');
             }
 
-            // Pad this glyph's rows to its own max width so columns align.
-            int maxWidth = 0;
-            foreach (var row in rows)
-                maxWidth = Math.Max(maxWidth, row.Length);
-            for (var r = 0; r < height; r++)
-                rows[r] = rows[r].PadRight(maxWidth);
+            // Rows are kept as written. FIGlet does not pad: a glyph whose rows differ
+            // in width shifts later glyphs on the shorter rows.
 
             glyphs[codePoint] = rows;
             cursor += height;
