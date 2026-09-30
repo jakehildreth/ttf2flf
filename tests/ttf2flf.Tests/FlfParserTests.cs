@@ -128,6 +128,27 @@ public class FlfParserTests
     }
 
     [Fact]
+    public void RaggedGlyphRows_AreNotPadded_LikeFiglet()
+    {
+        // A's second row is shorter than its first. FIGlet appends rows as written, so B
+        // shifts left on the short row.
+        using var temp = new TempDir();
+        var path = temp.File("ragged.flf");
+        var lines = BuildFlf(2, FullWidthHeader, new Dictionary<int, string[]>
+        {
+            ['A'] = ["AAAA@", "A@@"],
+            ['B'] = ["BB@", "BB@@"],
+        });
+        File.WriteAllText(path, string.Join('\n', lines) + '\n', new UTF8Encoding(false));
+
+        var font = FlfFont.Load(path);
+        var viewer = Renderer.Render(font, "ABA");
+
+        Assert.Equal(["AAAABBAAAA", "ABBA"], viewer);
+        Assert.Equal(TestSupport.Figlet(path, "ABA"), viewer);
+    }
+
+    [Fact]
     public void GlyphWithInvalidUtf8_IsUndefined_LikeFiglet()
     {
         // 0x81 hardblank bytes, as in FIGlet's pyramid.flf. FIGlet decodes font lines as
