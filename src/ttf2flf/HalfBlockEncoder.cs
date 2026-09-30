@@ -10,6 +10,9 @@ public static class HalfBlockEncoder
 {
     public const double DefaultThreshold = 0.5;
 
+    /// <summary>Non-space characters <see cref="Encode"/> can emit.</summary>
+    public const string GlyphCharacters = "█▀▄";
+
     public static string[] Encode(double[][] pixels, double threshold = DefaultThreshold)
     {
         var rows = new List<string>();
