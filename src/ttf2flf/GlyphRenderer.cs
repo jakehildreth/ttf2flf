@@ -140,11 +140,11 @@ public static class GlyphRenderer
     /// clipped; the canvas is sized to the tallest glyph.
     /// </summary>
     public static Bitmap PlaceOnCanvas(
-        in MeasuredGlyph glyph, int canvasPixels, int globalMaxBottom, int maxWidth = 0)
+        in MeasuredGlyph glyph, int canvasPixels, int globalMaxBottom, int maxWidth = 0, int rightSpacer = 0)
     {
         if (glyph.IsEmpty)
         {
-            var emptyWidth = glyph.AdvanceWidth;
+            var emptyWidth = glyph.AdvanceWidth; // space keeps its own advance; no spacer
             if (maxWidth > 0 && emptyWidth < maxWidth) emptyWidth = maxWidth;
             return new Bitmap
             {
@@ -165,7 +165,7 @@ public static class GlyphRenderer
             topRow = 0;
         }
 
-        var width = glyph.Width;
+        var width = glyph.Width + rightSpacer; // 1px right spacer between letters
         if (maxWidth > 0 && width < maxWidth) width = maxWidth;
 
         var pixels = ZeroPixels(canvasPixels, width);

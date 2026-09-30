@@ -127,7 +127,6 @@ public static class Program
                 // Pass 1: measure each glyph's tight bbox (span + bottom edge) at the grid.
                 var measured = new Dictionary<int, GlyphRenderer.MeasuredGlyph>();
                 var maxSpan = 0;
-                var maxWidth = 0;
                 var globalMaxBottom = int.MinValue;
                 verbose($"[+] Measuring {FlfWriter.RequiredCharacters.Length} characters...");
                 foreach (var charCode in FlfWriter.RequiredCharacters)
@@ -139,7 +138,6 @@ public static class Program
                             font, character, width: 0);
                         measured[charCode] = glyph;
                         if (glyph.Span > maxSpan) maxSpan = glyph.Span;
-                        if (glyph.Width > maxWidth) maxWidth = glyph.Width;
                         if (!glyph.IsEmpty && glyph.ContentBottomFromOrigin > globalMaxBottom)
                         {
                             globalMaxBottom = glyph.ContentBottomFromOrigin;
@@ -163,11 +161,13 @@ public static class Program
 
                 // Pass 2: bottom-align each glyph on the shared canvas (global max bottom ->
                 // last pixel row), preserving every glyph's internal gaps and true offsets.
+                // 1px right spacer per glyph: advance = own content width + 1, giving every
+                // letter a consistent 1px gap (matches figlet legibility). --monospace overrides.
                 var targetWidth = options.Monospace ? detectedWidth : 0;
                 foreach (var charCode in FlfWriter.RequiredCharacters)
                 {
                     var bitmap = GlyphRenderer.PlaceOnCanvas(
-                        measured[charCode], canvasPixels, globalMaxBottom, targetWidth);
+                        measured[charCode], canvasPixels, globalMaxBottom, targetWidth, rightSpacer: 1);
                     characterData[charCode] = bitmap;
                 }
             }
