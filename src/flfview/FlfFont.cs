@@ -249,6 +249,35 @@ public sealed class FlfFont
             cursor += height;
         }
 
+        // Code-tagged FIGcharacters: a tag line (code plus optional description), then
+        // height glyph rows. Codes are decimal, 0-prefixed octal, or 0x-prefixed hex,
+        // as in the FIGlet spec. Negative codes are parsed to keep the position but are
+        // not mapped: they cannot be typed. The block ends at the first malformed tag.
+        while (cursor < lines.Count)
+        {
+            var tag = lines[cursor];
+            if (tag is null || ParseCodeTag(tag) is not { } codePoint)
+                break;
+
+            if (cursor + 1 + height > lines.Count)
+                throw new FormatException(
+                    $"Unexpected end of file reading code-tagged char {codePoint} (line {cursor + 1}).");
+
+            cursor++;
+            if (codePoint >= 0 && !Enumerable.Range(cursor, height).Any(i => lines[i] is null))
+            {
+                var rows = new string[height];
+                for (var r = 0; r < height; r++)
+                {
+                    rows[r] = StripEndmarks(lines[cursor + r]!, cursor + r + 1).Replace(hardblank, ' ');
+                }
+
+                glyphs.TryAdd(codePoint, rows);
+            }
+
+            cursor += height;
+        }
+
         return new FlfFont
         {
             Name = name,
@@ -263,6 +292,55 @@ public sealed class FlfFont
         {
             if (lines[i] is not { } line || !string.IsNullOrWhiteSpace(line))
                 return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>Parses a code tag ("169", "0251" octal, "0xA9" hex, each with an optional description). Null when malformed.</summary>
+    public static int? ParseCodeTag(string tag)
+    {
+        var parts = tag.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+            return null;
+
+        var token = parts[0];
+        var negative = token.StartsWith('-');
+        var digits = negative ? token[1..] : token;
+        if (digits.Length == 0)
+            return null;
+
+        int value;
+        if (digits.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!int.TryParse(digits[2..], System.Globalization.NumberStyles.HexNumber, null, out value))
+                return null;
+        }
+        else if (digits.Length > 1 && digits.StartsWith('0'))
+        {
+            if (!TryParseOctal(digits[1..], out value))
+                return null;
+        }
+        else if (!int.TryParse(digits, out value))
+        {
+            return null;
+        }
+
+        return negative ? -value : value;
+    }
+
+    private static bool TryParseOctal(string digits, out int value)
+    {
+        value = 0;
+        foreach (var d in digits)
+        {
+            if (d is < '0' or > '7')
+                return false;
+
+            if (value > (int.MaxValue - 7) / 8)
+                return false;
+
+            value = value * 8 + (d - '0');
         }
 
         return true;
