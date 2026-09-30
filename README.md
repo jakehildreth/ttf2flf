@@ -3,6 +3,10 @@
 
 Convert TrueType fonts (.ttf) to FIGlet font files (.flf) for ASCII art text rendering.
 
+Available as both a **PowerShell module** and a standalone **C# command-line tool**
+(`src/ttf2flf`, produces a native `ttf2flf` binary). Both share the same conversion
+pipeline.
+
 Supports two rendering modes:
 - **Standard mode**: Traditional antialiased rendering with Unicode block characters
 - **Pixel-perfect mode**: True bitmap font rendering using half-block characters (▀▄█)
@@ -22,7 +26,95 @@ git clone https://github.com/jakehildreth/ttf2flf.git
 Import-Module ./ttf2flf/ttf2flf.psd1
 ```
 
-## Usage
+## C# CLI (`ttf2flf`)
+
+A standalone .NET console app with no PowerShell dependency. Pixel-perfect mode is the
+default; it auto-detects the font's native pixel grid and renders 1:1 for crisp,
+minimal-height output.
+
+### Build
+
+```bash
+# Run from source
+dotnet run --project src/ttf2flf -- <font.ttf>
+
+# Publish a self-contained binary (example: macOS arm64)
+dotnet publish src/ttf2flf -c Release -r osx-arm64 --self-contained -o dist/osx-arm64
+```
+
+### Usage
+
+```bash
+# Pixel-perfect (default): auto-detect grid, minimal height (ceil(span/2) rows)
+ttf2flf "PressStart2P.ttf" -o out/
+
+# Convert many at once
+ttf2flf fonts/*.ttf -o out/
+
+# Pin the render size (skips auto-detection)
+ttf2flf "font.ttf" --render-size 17
+
+# Anti-aliased mode (░▒▓█ blocks), --height = terminal rows
+ttf2flf "Impact.ttf" --aa --height 12
+
+# Fixed-width output
+ttf2flf "font.ttf" --monospace
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-o`, `--output` | same as input | Output .flf path or directory |
+| `--render-size` | auto | Explicit pixel render size (px) |
+| `--height` | 8 | Row height (pixel-perfect: px; `--aa`: terminal rows) |
+| `--aa` | off | Anti-aliased mode instead of half-block |
+| `--monospace` | off | Pad all glyphs to max advance width |
+| `--no-trim` | off | Keep empty top/bottom rows |
+| `--hardblank` | `$` | Hardblank character |
+| `--layout` | FullWidth | FullWidth, Kerned, or Smushed |
+| `--units-per-pixel` | auto | Override detection (grid = UnitsPerEm / n) |
+| `-v`, `--verbose` | off | Verbose logging |
+
+**Output height is the smallest number of rows that accurately represents the font:**
+`ceil(tallest glyph's pixel span / 2)`. A 9px-tall font produces 5 rows, not 4 (odd
+spans round up; the dangling top half-block's bottom pixel is simply off). Glyphs are
+measured at their true proportional width and bottom-aligned so x-height, capitals, and
+descenders keep their correct relationship.
+
+## flfview (font previewer)
+
+An interactive terminal browser for the generated fonts in `Corpus/`. Type a word and
+it renders live in the selected font; switch fonts to compare the same word.
+
+```bash
+dotnet run --project src/flfview          # interactive
+src/flfview/bin/Release/net10.0/flfview   # or the built binary
+```
+
+| Key / command | Action |
+|----------------|--------|
+| printable chars | Append to word (live re-render) |
+| `Backspace` | Delete last char |
+| `Up`/`Down`, `Tab`/`Shift+Tab` | Previous / next font |
+| `PgUp`/`PgDn` | Jump ±10 fonts |
+| `/all <word>` | Render the word in every font, paged |
+| `/font <name>` | Jump to a font by name |
+| `/tier all\|verified\|clean\|approximate` | Filter the font list by quality tier |
+| `/fonts` | List all fonts |
+| `/clear`, `/help`, `/quit` | — |
+| `Esc` / `Ctrl+C` | Exit |
+
+One-shot (scriptable) mode:
+
+```bash
+flfview --render "Hello" --font "Jewel 6"
+flfview --render "Sphinx" --all
+flfview --fonts
+```
+
+Fonts are tagged by quality tier: `[v]` verified (bitmap-exact against the author's
+reference sheet), `[ ]` clean, `[~]` approximate (decorative/stroked source).
+
+## PowerShell module usage
 
 ### Pixel-Perfect Mode (Bitmap Fonts)
 
@@ -129,14 +221,25 @@ This means **2 pixel rows = 1 terminal row**, allowing precise bitmap font rende
 
 ### Auto-Detection
 
-The module attempts to detect the native pixel height by:
-1. Testing common bitmap font sizes (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 24, 32)
-2. Rendering test characters at each size
-3. Measuring "clean pixel ratio" (% of pixels that are fully on/off, not antialiased)
-4. Selecting the smallest size with ≥85% clean pixels
-5. Checking font name for pixel size hints (e.g., "Jersey20" → try size 20)
+Pixel-style fonts are outline fonts that mimic pixels — they carry no embedded bitmap
+strike, so detection works from the font's geometry, in priority order:
 
-**Limitations:** Some fonts scale cleanly at multiple sizes, causing auto-detection to pick a smaller size than the design size. When this happens, manually specify `-PixelSize`.
+1. **Name hint.** A number ≥ 5 in the family name is the design grid
+   (e.g., "Jacquard12" → 12, "Jersey20" → 20). This is the most reliable signal.
+2. **Stroke-width alignment.** For thick-stroke fonts, render a probe glyph across
+   candidate sizes and measure how often stroke widths are integer multiples of the
+   thinnest stroke. The native grid (and its integer multiples) keeps strokes uniform;
+   off-grid sizes break alignment. The smallest such size is the grid.
+3. **Fallback.** Thin-stroke fonts render cleanly at every size and give no signal;
+   they default to 8.
+
+The recommended render size is then the smallest integer multiple of the grid that
+reaches a 16px legibility floor (native 8 → render 16). Supersampling thickens 1px
+strokes to 2px and repairs anti-aliased edges.
+
+**Limitations:** Detection finds the font's *native grid*, not necessarily the most
+legible size. If output looks too thin, try a higher `-PixelSize` (e.g., a 2x multiple
+of the grid). Auto-detection can't know your aesthetic preference.
 
 ### Manual Pixel Size Selection
 
@@ -186,9 +289,22 @@ This module uses [SixLabors.Fonts](https://github.com/SixLabors/Fonts) and [SixL
 
 Windows PowerShell 5.1 uses .NET Framework 4.x and is not compatible.
 
-## License
+## Bundled font corpus
 
-MIT
+`Corpus/` holds the converted fonts and the reference material used to calibrate the
+converter:
+
+- `Corpus/OutputFLF/` — 55 pixel/bitmap fonts converted and verified bitmap-exact
+  against each author's reference sheet.
+- `Corpus/FontBookFLF/` — additional pixel fonts converted from an installed font
+  library (the `name_Xh`/`name_Xp` variants plus extras like 3270, UniVGA16, C64 Pro).
+- `Corpus/Reference/` — the authors' reference sprite-sheet PNGs.
+- `Corpus/render_sizes.json` — the calibrated per-font render sizes.
+- `Corpus/compare_png.py` — the parity harness that compares generated FLF glyphs to the
+  reference PNGs.
+
+Browse them all with `flfview`. The older PowerShell test fonts live in
+`Tests/TestData/SourceTTF/`.
 
 ## Included Test Fonts
 

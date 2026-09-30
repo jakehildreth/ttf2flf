@@ -1,1 +1,16 @@
 .DS_Store
+
+# .NET build artifacts
+bin/
+obj/
+out/
+
+# Self-contained publish output (rebuild via: dotnet publish src/ttf2flf -c Release -r osx-arm64 --self-contained -o dist/osx-arm64)
+dist/
+
+# Python cache (PNG parity harness)
+__pycache__/
+*.pyc
+
+# Source TTFs are not committed (licensing); only the generated .flf output is.
+Corpus/TTF/
