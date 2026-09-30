@@ -143,6 +143,25 @@ public static class GlyphRenderer
     }
 
     /// <summary>
+    /// The canvas height in pixels that fits every measured glyph at its baseline-relative
+    /// offset. A glyph needs span + (globalMaxBottom - contentBottom) pixels: its height
+    /// plus the room above the shared baseline. Sizing from the tallest span alone clamps a
+    /// deep ascender (low bottom, tall span) to the canvas top and shifts it down.
+    /// Returns at least 2 (one half-block row), or 2 when every glyph is empty.
+    /// </summary>
+    public static int RequiredCanvasPixels(IReadOnlyCollection<MeasuredGlyph> glyphs)
+    {
+        var nonEmpty = glyphs.Where(g => !g.IsEmpty).ToList();
+        if (nonEmpty.Count == 0)
+            return 2;
+
+        var globalMaxBottom = nonEmpty.Max(g => g.ContentBottomFromOrigin);
+        var maxExtent = nonEmpty.Max(g => g.Span + (globalMaxBottom - g.ContentBottomFromOrigin));
+        if (maxExtent < 1) maxExtent = 1;
+        return (int)Math.Ceiling(maxExtent / 2.0) * 2;
+    }
+
+    /// <summary>
     /// Places a measured glyph onto the shared pixel canvas (height =
     /// outputHeight*2). Bottom-aligned: the global lowest content bottom
     /// (<paramref name="globalMaxBottom"/>) maps to the canvas's last pixel row, and every
