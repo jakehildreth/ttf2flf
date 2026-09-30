@@ -24,6 +24,9 @@ public sealed class FlfFont
     // FIGlet mandated character order: ASCII 32..126, then the 7 German chars.
     private static readonly int[] CharOrder = BuildCharOrder();
 
+    /// <summary>Index in <see cref="CharOrder"/> of the first German character (Ä).</summary>
+    private const int FirstGermanIndex = 95;
+
     private static int[] BuildCharOrder()
     {
         var order = new int[102];
@@ -212,8 +215,15 @@ public sealed class FlfFont
         int cursor = 1 + commentLines;
         var glyphs = new Dictionary<int, string[]>();
 
-        foreach (int codePoint in CharOrder)
+        for (var index = 0; index < CharOrder.Length; index++)
         {
+            var codePoint = CharOrder[index];
+
+            // Like FIGlet, a font may end (optionally with blank lines) before the German
+            // block; those characters stay undefined. Ending anywhere else is malformed.
+            if (index >= FirstGermanIndex && RestIsBlank(lines, cursor))
+                break;
+
             if (cursor + height > lines.Count)
                 throw new FormatException(
                     $"Unexpected end of file reading char {codePoint} (line {cursor + 1}).");
@@ -249,6 +259,17 @@ public sealed class FlfFont
             Height = height,
             Glyphs = glyphs,
         };
+    }
+
+    private static bool RestIsBlank(IReadOnlyList<string?> lines, int start)
+    {
+        for (var i = start; i < lines.Count; i++)
+        {
+            if (lines[i] is not { } line || !string.IsNullOrWhiteSpace(line))
+                return false;
+        }
+
+        return true;
     }
 
     private static int HeaderInt(string[] parts, int index, string field) =>
