@@ -294,7 +294,6 @@ public static class Program
 
             // Pass 1: measure each glyph's tight bbox (span + bottom edge).
             var measured = new Dictionary<int, GlyphRenderer.MeasuredGlyph>();
-            var maxSpan = 0;
             var globalMaxBottom = int.MinValue;
             verbose($"[+] Measuring {FlfWriter.RequiredCharacters.Length} characters...");
             foreach (var charCode in FlfWriter.RequiredCharacters)
@@ -304,7 +303,6 @@ public static class Program
                 {
                     var glyph = rasterizer.MeasurePixelPerfect(font, character);
                     measured[charCode] = glyph;
-                    if (glyph.Span > maxSpan) maxSpan = glyph.Span;
                     if (!glyph.IsEmpty && glyph.ContentBottomFromOrigin > globalMaxBottom)
                     {
                         globalMaxBottom = glyph.ContentBottomFromOrigin;
@@ -317,12 +315,13 @@ public static class Program
                 }
             }
 
-            // Height = ceil(tallest glyph's vertical pixel span / 2). Odd spans round UP.
-            if (maxSpan < 1) maxSpan = 1;
-            var outputHeight = (int)Math.Ceiling(maxSpan / 2.0);
-            var canvasPixels = outputHeight * 2;
+            // Height = ceil(tallest baseline-relative pixel extent / 2): each glyph's span
+            // plus the room above the shared baseline it occupies. Sizing from the span
+            // alone clamps a deep ascender (low bottom, tall span) to the canvas top.
+            var canvasPixels = GlyphRenderer.RequiredCanvasPixels(measured.Values);
+            var outputHeight = canvasPixels / 2;
             verbose(
-                $"[+] Tallest glyph span: {maxSpan}px -> {outputHeight} rows (canvas {canvasPixels}px)");
+                $"[+] Tallest baseline extent: {canvasPixels}px -> {outputHeight} rows");
 
             // Pass 2: bottom-align each glyph on the shared canvas (global max bottom ->
             // last pixel row), preserving every glyph's internal gaps and true offsets.
