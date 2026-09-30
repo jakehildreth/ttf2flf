@@ -87,6 +87,12 @@ public static class Program
             : _ => { };
 
         var converter = new Converter(options, output, error, verbose, rasterizer ?? GlyphRasterizer.Default);
+        if (FindInputOutputConflict(options, converter) is { } conflict)
+        {
+            error.WriteLine(conflict);
+            return 1;
+        }
+
         if (FindOutputCollision(options.InputPaths, converter) is { } collision)
         {
             error.WriteLine(collision);
@@ -138,6 +144,54 @@ public static class Program
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Reports the first input whose resolved destination is the input file itself
+    /// (for example `ttf2flf font.ttf -o font.ttf`), which would truncate the source.
+    /// Compares by resolved path with the platform's case rules, and by file identity
+    /// (device and inode) when both files already exist, so aliases are caught.
+    /// </summary>
+    private static string? FindInputOutputConflict(CliOptions options, Converter converter)
+    {
+        var comparer = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        foreach (var inputPath in options.InputPaths)
+        {
+            string input, destination;
+            try
+            {
+                input = Path.GetFullPath(inputPath);
+                destination = Path.GetFullPath(converter.ResolveOutputFile(input));
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                continue;
+            }
+
+            if (string.Equals(input, destination, comparer) || SameFile(input, destination))
+            {
+                return $"error: output '{destination}' would overwrite the input font '{input}'; " +
+                       "choose a different -o path";
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>True when both paths exist and resolve to the same file, following symlinks.</summary>
+    private static bool SameFile(string first, string second)
+    {
+        if (!File.Exists(first) || !File.Exists(second))
+            return false;
+
+        var a = new FileInfo(first);
+        var b = new FileInfo(second);
+        var targetA = a.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? a.FullName;
+        var targetB = b.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? b.FullName;
+        return string.Equals(
+            targetA,
+            targetB,
+            OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class Converter(
