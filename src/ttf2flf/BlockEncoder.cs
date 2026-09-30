@@ -2,7 +2,7 @@ using System.Text;
 
 namespace ttf2flf;
 
-/// <summary>Port of Private/ConvertTo-BlockCharacters.ps1 (brightness → ░▒▓█).</summary>
+/// <summary>Converts pixel brightness to anti-aliased block characters (░▒▓█).</summary>
 public static class BlockEncoder
 {
     public static string[] Encode(double[][] pixels, char hardblank = '$')

@@ -3,46 +3,35 @@
 
 Convert TrueType fonts (.ttf) to FIGlet font files (.flf) for ASCII art text rendering.
 
-Available as both a **PowerShell module** and a standalone **C# command-line tool**
-(`src/ttf2flf`, produces a native `ttf2flf` binary). Both share the same conversion
-pipeline.
+ttf2flf is a standalone **.NET command-line tool** (`src/ttf2flf`, produces a native
+`ttf2flf` binary). It supports two rendering modes:
 
-Supports two rendering modes:
-- **Standard mode**: Traditional antialiased rendering with Unicode block characters
-- **Pixel-perfect mode**: True bitmap font rendering using half-block characters (▀▄█)
+- **Pixel-perfect mode** (default): true bitmap font rendering using half-block
+  characters (▀▄█), auto-detecting the font's native pixel grid
+- **Standard mode**: traditional anti-aliased rendering with Unicode block
+  characters (░▒▓█)
 
 ## Requirements
 
-- **PowerShell 7.0 or later** - Required due to SixLabors.Fonts dependency on .NET 6+
+- .NET 8.0 SDK or later to build from source (or download a self-contained binary)
 - Windows, macOS, or Linux
 
 ## Installation
 
-```powershell
+```bash
 # Clone the repository
 git clone https://github.com/jakehildreth/ttf2flf.git
+cd ttf2flf
 
-# Import the module
-Import-Module ./ttf2flf/ttf2flf.psd1
-```
-
-## C# CLI (`ttf2flf`)
-
-A standalone .NET console app with no PowerShell dependency. Pixel-perfect mode is the
-default; it auto-detects the font's native pixel grid and renders 1:1 for crisp,
-minimal-height output.
-
-### Build
-
-```bash
 # Run from source
 dotnet run --project src/ttf2flf -- <font.ttf>
 
-# Publish a self-contained binary (example: macOS arm64)
+# Or publish a self-contained binary (example: macOS arm64)
 dotnet publish src/ttf2flf -c Release -r osx-arm64 --self-contained -o dist/osx-arm64
+# Binary is at dist/osx-arm64/ttf2flf
 ```
 
-### Usage
+## Usage
 
 ```bash
 # Pixel-perfect (default): auto-detect grid, minimal height (ceil(span/2) rows)
@@ -54,12 +43,14 @@ ttf2flf fonts/*.ttf -o out/
 # Pin the render size (skips auto-detection)
 ttf2flf "font.ttf" --render-size 17
 
-# Anti-aliased mode (░▒▓█ blocks), --height = terminal rows
+# Anti-aliased mode (░▒▓█ blocks); --height = terminal rows
 ttf2flf "Impact.ttf" --aa --height 12
 
 # Fixed-width output
 ttf2flf "font.ttf" --monospace
 ```
+
+### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -74,16 +65,20 @@ ttf2flf "font.ttf" --monospace
 | `--units-per-pixel` | auto | Override detection (grid = UnitsPerEm / n) |
 | `-v`, `--verbose` | off | Verbose logging |
 
-**Output height is the smallest number of rows that accurately represents the font:**
+### Output shape
+
+**Height is the smallest number of rows that accurately represents the font:**
 `ceil(tallest glyph's pixel span / 2)`. A 9px-tall font produces 5 rows, not 4 (odd
 spans round up; the dangling top half-block's bottom pixel is simply off). Glyphs are
-measured at their true proportional width and bottom-aligned so x-height, capitals, and
-descenders keep their correct relationship.
+measured at their true proportional width, bottom-aligned so x-height, capitals, and
+descenders keep their correct relationship, and given a 1px right spacer column so
+letters stay legible.
 
 ## flfview (font previewer)
 
 An interactive terminal browser for the generated fonts in `Corpus/`. Type a word and
-it renders live in the selected font; switch fonts to compare the same word.
+it renders live in the selected font; switch fonts to compare the same word. Output
+matches `figlet`'s FullWidth rendering byte-for-byte.
 
 ```bash
 dotnet run --project src/flfview          # interactive
@@ -114,143 +109,43 @@ flfview --fonts
 Fonts are tagged by quality tier: `[v]` verified (bitmap-exact against the author's
 reference sheet), `[ ]` clean, `[~]` approximate (decorative/stroked source).
 
-## PowerShell module usage
-
-### Pixel-Perfect Mode (Bitmap Fonts)
-
-Best for bitmap/pixel fonts. Uses half-block characters where 2 pixel rows = 1 terminal row.
-
-```powershell
-# Auto-detect pixel height (works for many bitmap fonts)
-ConvertTo-FLF -Path 'PressStart2P.ttf' -PixelPerfect
-
-# Specify pixel height when auto-detection fails
-ConvertTo-FLF -Path 'font.ttf' -PixelSize 15 -PixelPerfect
-
-# Common pixel sizes for bitmap fonts: 5, 6, 8, 10, 12, 15, 16, 20, 24
-```
-
-**Note:** Works best with true bitmap fonts that have no antialiasing. Fonts with smoothing or gradients may not convert cleanly.
-
-### Standard Mode (Regular Fonts)
-
-For antialiased/outline fonts. Uses traditional Unicode block characters (░▒▓█).
-
-```powershell
-# Basic conversion
-ConvertTo-FLF -Path 'Impact.ttf' -OutputPath 'Impact.flf'
-
-# Custom height (more detail)
-ConvertTo-FLF -Path 'Arial.ttf' -Height 12
-
-# Enable smushed layout mode
-ConvertTo-FLF -Path 'font.ttf' -Layout Smushed
-
-# Monospace output (all characters same width)
-ConvertTo-FLF -Path 'font.ttf' -Monospace
-
-# Get FLF content without writing file
-$content = ConvertTo-FLF -Path 'font.ttf' -PassThru
-```
-
-### Validate an FLF file
-
-```powershell
-# Validate a single file
-Test-FLFFile -Path 'myfont.flf'
-
-# Strict validation (warnings become errors)
-Test-FLFFile -Path 'myfont.flf' -Strict
-
-# Validate all FLF files in a directory
-Get-ChildItem *.flf | Test-FLFFile | Where-Object { -not $_.IsValid }
-```
-
-### Pipeline support
-
-```powershell
-# Convert all TTF files in a directory
-Get-ChildItem -Path 'C:\Fonts' -Filter '*.ttf' | ConvertTo-FLF -OutputPath 'output\'
-```
-
-## Parameters
-
-### ConvertTo-FLF
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `-Path` | string | (required) | Path to TTF/OTF font file |
-| `-Height` | int | 8 | FIGcharacter height in rows (4-32) - standard mode only |
-| `-PixelSize` | int | auto | Pixel height for rendering (4-64) - pixel-perfect mode |
-| `-PixelPerfect` | switch | false | Enable pixel-perfect mode (half-block characters) |
-| `-OutputPath` | string | same as input | Output .flf file path |
-| `-Hardblank` | char | `$` | Hardblank character for spacing |
-| `-Layout` | string | FullWidth | Layout mode: FullWidth, Kerned, or Smushed |
-| `-Monospace` | switch | false | Force all characters to same width |
-| `-PassThru` | switch | false | Return content instead of writing file |
-
-**Note:** `-Height` is for standard mode, `-PixelSize` is for pixel-perfect mode. Don't use both together.
-
-### Test-FLFFile
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `-Path` | string | - | Path to FLF file to validate |
-| `-Content` | string | - | FLF content as string |
-| `-Strict` | switch | false | Treat warnings as errors |
-
-## Layout Modes
-
-| Mode | Description |
-|------|-------------|
-| **FullWidth** | Characters at full designed width, no compression |
-| **Kerned** | Characters touch but don't overlap (fitting) |
-| **Smushed** | Characters overlap using FIGlet smushing rules |
-
-## Pixel-Perfect Mode Details
-
-### How It Works
+## Pixel-perfect mode details
 
 Pixel-perfect mode uses half-block characters to achieve true pixel-level rendering:
-- **█** (U+2588) - Both pixel rows ON
-- **▀** (U+2580) - Top pixel row ON, bottom OFF
-- **▄** (U+2584) - Top pixel row OFF, bottom ON
-- **Space** - Both pixel rows OFF
 
-This means **2 pixel rows = 1 terminal row**, allowing precise bitmap font rendering.
+- **█** (U+2588) — both pixel rows ON
+- **▀** (U+2580) — top pixel row ON, bottom OFF
+- **▄** (U+2584) — top pixel row OFF, bottom ON
+- **Space** — both pixel rows OFF
 
-### Auto-Detection
+So **2 pixel rows = 1 terminal row**, allowing precise bitmap font rendering.
+
+### Auto-detection
 
 Pixel-style fonts are outline fonts that mimic pixels — they carry no embedded bitmap
-strike, so detection works from the font's geometry, in priority order:
+strike, so detection works from the font's geometry:
 
 1. **Name hint.** A number ≥ 5 in the family name is the design grid
-   (e.g., "Jacquard12" → 12, "Jersey20" → 20). This is the most reliable signal.
+   (e.g., "Jacquard12" → 12, "Jersey20" → 20).
 2. **Stroke-width alignment.** For thick-stroke fonts, render a probe glyph across
    candidate sizes and measure how often stroke widths are integer multiples of the
-   thinnest stroke. The native grid (and its integer multiples) keeps strokes uniform;
-   off-grid sizes break alignment. The smallest such size is the grid.
-3. **Fallback.** Thin-stroke fonts render cleanly at every size and give no signal;
-   they default to 8.
+   thinnest stroke; the smallest such size is the grid.
+3. **Fallback.** Thin-stroke fonts render cleanly at every size and default to 8.
 
-The recommended render size is then the smallest integer multiple of the grid that
-reaches a 16px legibility floor (native 8 → render 16). Supersampling thickens 1px
-strokes to 2px and repairs anti-aliased edges.
+The **render size** is computed separately from the grid as `grid × UnitsPerEm /
+capHeightInUnits`, the size at which the rasterizer reproduces the design grid 1:1. The
+bundled corpus fonts are calibrated per-font (see `Corpus/render_sizes.json`); override
+any font with `--render-size`.
 
-**Limitations:** Detection finds the font's *native grid*, not necessarily the most
-legible size. If output looks too thin, try a higher `-PixelSize` (e.g., a 2x multiple
-of the grid). Auto-detection can't know your aesthetic preference.
+### Manual size selection
 
-### Manual Pixel Size Selection
+When auto-detection produces suboptimal results:
 
-When auto-detection fails or produces suboptimal results:
-
-```powershell
-# Try sizes around common bitmap heights
-foreach ($size in 8, 10, 12, 15, 16, 20, 24) {
-    ConvertTo-FLF -Path 'font.ttf' -PixelSize $size -PixelPerfect -OutputPath "test-$size.flf"
+```bash
+for size in 8 10 12 15 16 20 24; do
+    ttf2flf "font.ttf" --render-size $size -o "test-$size.flf"
     figlet -f "test-$size.flf" "Test"
-}
+done
 ```
 
 Look for the size where characters appear crisp and properly proportioned.
@@ -261,33 +156,24 @@ Generated FLF files include:
 
 - 102 required FIGcharacters (ASCII 32-126 + German characters: Ä Ö Ü ä ö ü ß)
 - Comment block with font name, source file, timestamp, and generator version
+- **Pixel-perfect mode:** half-block characters for precise pixel rendering (▀▄█)
 - **Standard mode:** Unicode block characters for shading (░▒▓█)
-- **Pixel-perfect mode:** Half-block characters for precise pixel rendering (▀▄█)
 
-### Auto-trimming
+Empty rows at the top and bottom are removed (the minimal-height span), producing
+compact FLF files without losing any visual information.
 
-Empty rows at the top and bottom are automatically removed while preserving all character content. This creates more compact FLF files without losing any visual information.
-
-## Using Generated Fonts
+## Using generated fonts
 
 ```bash
 # With figlet
 figlet -f ./myfont.flf "Hello World"
 
-# With toilet (may not support half-block characters)
-toilet -f ./myfont.flf "Hello World"
-
-# Test in PowerShell
-figlet -f ./PressStart2P.flf "Pixel Perfect"
+# Or preview with the bundled viewer
+flfview --render "Hello World" --font "myfont"
 ```
 
-**Note:** Pixel-perfect fonts with half-block characters require terminal support for Unicode box-drawing characters. Most modern terminals support this.
-
-## Why PowerShell 7+?
-
-This module uses [SixLabors.Fonts](https://github.com/SixLabors/Fonts) and [SixLabors.ImageSharp](https://github.com/SixLabors/ImageSharp) for cross-platform TTF parsing and glyph rendering. These libraries require .NET 6+, which is only available in PowerShell 7.
-
-Windows PowerShell 5.1 uses .NET Framework 4.x and is not compatible.
+**Note:** Pixel-perfect fonts with half-block characters require terminal support for
+Unicode box-drawing characters. Most modern terminals support this.
 
 ## Bundled font corpus
 
@@ -303,37 +189,7 @@ converter:
 - `Corpus/compare_png.py` — the parity harness that compares generated FLF glyphs to the
   reference PNGs.
 
-Browse them all with `flfview`. The older PowerShell test fonts live in
-`Tests/TestData/SourceTTF/`.
-
-## Included Test Fonts
-
-The repository includes 20 high-quality bitmap/pixel fonts that have been tested and optimized for FLF conversion:
-
-### 04B Series (10 fonts)
-Compact bitmap fonts by 04 - various sizes from 3px to 25px. Most require manual `-PixelSize 8` for optimal results.
-
-### Specialty Fonts
-- **5by5** - Ultra-compact 5x5 pixel font
-- **blocco** - Geometric outline font (12px recommended)
-- **Bytesized-Regular** - Tiny bitmap font (8px recommended)
-- **JacquardaBastarda9-Regular** - Gothic/blackletter texture (13px recommended)
-- **Micro5-Regular** - Minimal 5px font
-- **negative-quinpix** - Inverted pixel style
-- **PressStart2P** - Classic retro gaming font
-- **Silkscreen** - Clean pixel font
-- **Sixtyfour-Regular** - Commodore 64 inspired
-- **Tiny5** - Compact pixel font
-
-All fonts located in `Tests/TestData/SourceTTF/` with corresponding FLF files in `Tests/TestData/OutputFLF/KnownGood/`.
-
-### Manual Size Requirements
-
-Some fonts need explicit `-PixelSize` for best results:
-- 04B_03B_, 04B_08__, 04B_21__, 04B_24__: `-PixelSize 8`
-- blocco: `-PixelSize 12`
-- Bytesized-Regular: `-PixelSize 8`
-- JacquardaBastarda9-Regular: `-PixelSize 13`
+Browse them all with `flfview`.
 
 ## Links
 
