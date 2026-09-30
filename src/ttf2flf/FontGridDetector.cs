@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using SixLabors.Fonts;
 
@@ -11,26 +10,21 @@ public static class FontGridDetector
 
     public readonly record struct GridSize(int Height, int Width);
 
-    /// <summary>One calibrated render-size entry keyed by font file name.</summary>
-    private sealed class RenderSizeEntry
-    {
-        public int Grid { get; set; }
-        public int RenderSize { get; set; }
-    }
 
     /// <summary>
     /// Computes the pixel size to RENDER at. These outline fonts use an em square far larger
     /// than the design grid, so at "size = grid" the design pixel is sub-pixel and the
     /// rasterizer shrinks/distorts strokes. The true design grid only emerges near
-    /// grid × UnitsPerEm/capHeight. Authoritative per-font values live in render_sizes.json
-    /// (PNG-calibrated) next to the font when present; otherwise the size is computed and
-    /// nudged by stroke-singleness.
+    /// grid × UnitsPerEm/capHeight. Authoritative per-font values live in
+    /// <see cref="CalibratedRenderSizes"/>; otherwise the size is computed and nudged by
+    /// stroke-singleness.
     /// </summary>
     public static int DetectRenderSize(
         FontFamily fontFamily, int grid, string sourcePath, Action<string>? verbose = null)
     {
         var fileName = Path.GetFileName(sourcePath);
 
+        // The baked PNG-calibrated table (authoritative for the bundled corpus) wins.
         // 1. Baked PNG-calibrated table (authoritative for the bundled corpus) wins.
         if (CalibratedRenderSizes.ByFileName.TryGetValue(fileName, out var calibrated))
         {
@@ -38,13 +32,6 @@ public static class FontGridDetector
             return calibrated;
         }
 
-        // 2. render_sizes.json next to the font (runtime override).
-        var table = LoadRenderSizeTable(Path.GetDirectoryName(sourcePath));
-        if (table is not null && table.TryGetValue(fileName, out var entry) && entry.RenderSize > 0)
-        {
-            verbose?.Invoke($"[+] Render size {entry.RenderSize} from render_sizes.json (grid {grid})");
-            return entry.RenderSize;
-        }
 
         return ComputedRenderSize(fontFamily, grid, verbose);
     }
@@ -179,21 +166,6 @@ public static class FontGridDetector
         return true;
     }
 
-    private static Dictionary<string, RenderSizeEntry>? LoadRenderSizeTable(string? directory)
-    {
-        if (string.IsNullOrEmpty(directory)) return null;
-        var path = Path.Combine(directory, "render_sizes.json");
-        if (!File.Exists(path)) return null;
-        try
-        {
-            var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<Dictionary<string, RenderSizeEntry>>(json);
-        }
-        catch
-        {
-            return null;
-        }
-    }
 
     /// <summary>Smallest design grid accepted from a font-name number.</summary>
     public const int MinNameGrid = 5;

@@ -2,9 +2,15 @@ namespace ttf2flf;
 
 /// <summary>
 /// PNG-calibrated render sizes for the bundled corpus fonts, keyed by font file name.
-/// Generated from Corpus/render_sizes.json (each value reproduces the font author's
-/// reference bitmap at 100% exact match, except the fallback-unverified set noted in the
-/// source file). These are the authoritative render sizes for these fonts.
+/// This is the single source of truth (Corpus/render_sizes.json was removed in #19).
+///
+/// Verification per font against the authors' reference sheets:
+/// - 43 fonts: 100% exact bitmap match.
+/// - Override-verified (hand-picked size, visually confirmed): Candy 10, Loser 7,
+///   Nope 8, Rude 11.
+/// - Fallback-unverified (no clean grid found; rendered at the computed size):
+///   Corset 8, Lookout 7, Manticore 14, Nocive 15, Quit 13, Vest 9, Xerxes 10,
+///   Ziplock 13.
 /// </summary>
 public static class CalibratedRenderSizes
 {
