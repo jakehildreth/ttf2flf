@@ -9,17 +9,18 @@ character decoded from the half-block rows of the generated FLF.
 Parity metric per font: mean exact-match fraction over the 95 ASCII chars.
 A cell and a glyph match when their tight bounding boxes are identical bits.
 
-Usage: compare_png.py <flf_dir> [--json]
-Expects Corpus/TTF zips extracted at /tmp/ttfcorpus and PNGs in Corpus/Reference.
+Usage: compare_png.py <flf_dir> [--corpus-dir DIR] [--json]
+
+--corpus-dir is the directory holding the extracted corpus zips (one folder per
+font with its .ttf, sheet .png, and metadata .txt). Default: $TTF2FLF_CORPUS_DIR,
+then /tmp/ttfcorpus.
 """
-import os, re, sys, json
+import argparse, os, re, sys, json
 import site; sys.path.append(site.getusersitepackages())
 from PIL import Image
 import numpy as np
 
-ROOT = '/Users/jhildreth/Repos/ttf2flf'
-CORPUS_TXT = '/tmp/ttfcorpus'
-REF_DIR = os.path.join(ROOT, 'Corpus', 'Reference')
+DEFAULT_CORPUS_DIR = os.environ.get('TTF2FLF_CORPUS_DIR', '/tmp/ttfcorpus')
 ASCII = [chr(c) for c in range(32, 127)]
 GERMAN = [196, 214, 220, 228, 246, 252, 223]
 
@@ -135,10 +136,18 @@ def compare_font(flf_path, png_path, txt_path):
     return matched, total, diffs
 
 def main():
-    flf_dir = sys.argv[1]
+    parser = argparse.ArgumentParser(description='Compare generated FLF glyphs to reference PNG sheets.')
+    parser.add_argument('flf_dir', help='directory with the generated .flf files')
+    parser.add_argument('--corpus-dir', default=DEFAULT_CORPUS_DIR,
+                        help='extracted corpus zips (default: $TTF2FLF_CORPUS_DIR or /tmp/ttfcorpus)')
+    parser.add_argument('--json', action='store_true', help='print results as JSON')
+    args = parser.parse_args()
+    if not os.path.isdir(args.corpus_dir):
+        parser.error(f'corpus directory not found: {args.corpus_dir}')
+    flf_dir, corpus_dir = args.flf_dir, args.corpus_dir
     results = {}
-    for d in sorted(os.listdir(CORPUS_TXT)):
-        dpath = os.path.join(CORPUS_TXT, d)
+    for d in sorted(os.listdir(corpus_dir)):
+        dpath = os.path.join(corpus_dir, d)
         if not os.path.isdir(dpath): continue
         txts = [f for f in os.listdir(dpath) if f.endswith('.txt')]
         ttfs = [f for f in os.listdir(dpath) if f.lower().endswith('.ttf')]
@@ -154,7 +163,7 @@ def main():
         results[ttfs[0]] = {'matched': m, 'total': t, 'pct': round(100*m/t, 1),
                             'nameGrid': int(ng.group(1)) if ng else None, 'pngCellH': cell_h,
                             'first_diffs': diffs[:5]}
-    if '--json' in sys.argv:
+    if args.json:
         print(json.dumps(results, indent=1))
     else:
         for k, v in results.items(): print(k, v)

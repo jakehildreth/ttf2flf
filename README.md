@@ -227,7 +227,8 @@ converter:
 - `Corpus/Reference/` — the authors' reference sprite-sheet PNGs.
 - `Corpus/render_sizes.json` — the calibrated per-font render sizes.
 - `Corpus/compare_png.py` — the parity harness that compares generated FLF glyphs to the
-  reference PNGs.
+  reference PNGs: `python3 Corpus/compare_png.py <flf_dir> --corpus-dir <extracted zips>`
+  (`--corpus-dir` defaults to `$TTF2FLF_CORPUS_DIR`, then `/tmp/ttfcorpus`).
 
 Browse them all with `flfview`.
 
