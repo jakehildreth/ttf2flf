@@ -65,7 +65,7 @@ ttf2flf "font.ttf" --monospace
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `-o`, `--output` | same as input | Output .flf path, or a directory. With several inputs it must be a directory (created if missing); a `.flf` path or an existing file is rejected before any conversion. |
+| `-o`, `--output` | same as input | Output .flf path, or a directory. With several inputs it must be a directory (created if missing); a `.flf` path or an existing file is rejected before any conversion. Inputs that would write the same output file (e.g. `a/font.ttf` and `b/font.ttf`) are rejected before any conversion. |
 | `--render-size` | auto | Explicit pixel render size (px) |
 | `--height` | 8 | Row height (pixel-perfect: px; `--aa`: terminal rows) |
 | `--aa` | off | Anti-aliased mode instead of half-block |
