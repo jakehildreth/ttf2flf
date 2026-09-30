@@ -1,3 +1,5 @@
+using SixLabors.Fonts;
+
 namespace ttf2flf.Tests;
 
 public class GridHintTests
@@ -19,5 +21,16 @@ public class GridHintTests
     public void GridHintFromName_UsesLastNumberInSupportedRange(string fontName, int? expected)
     {
         Assert.Equal(expected, FontGridDetector.GridHintFromName(fontName));
+    }
+
+    [Theory]
+    [InlineData(8, true)]    // Press Start 2P's real 8 px grid
+    [InlineData(64, false)]  // a "C64"-style model number: 8 px strokes at size 64
+    [InlineData(32, false)]
+    public void StrokeProbe_ConfirmsOnlyPlausibleGrids(int hint, bool confirmed)
+    {
+        var family = new FontCollection().Add(TestSupport.FixtureFont);
+
+        Assert.Equal(confirmed, FontGridDetector.StrokesConfirmGrid(family, hint, out _));
     }
 }

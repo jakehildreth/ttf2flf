@@ -162,7 +162,9 @@ strike, so detection works from the font's geometry:
 
 1. **Name hint.** The last number from 5 to 64 in the family name is the design grid
    (e.g., "Jacquard12" → 12, "3270 Pixel 8" → 8). Numbers outside that range, such as
-   model or version numbers ("3270 Regular", "SuperMario256"), are ignored.
+   model or version numbers ("3270 Regular", "SuperMario256"), are ignored. The hint is
+   used only if the thinnest stroke of "H" at the matching render size is at most 2 px;
+   otherwise ("C64 Pro Mono" on an 8 px font gives 8 px strokes) detection moves on.
 2. **Stroke-width alignment.** For thick-stroke fonts, render a probe glyph across
    candidate sizes and measure how often stroke widths are integer multiples of the
    thinnest stroke; the smallest such size is the grid.
