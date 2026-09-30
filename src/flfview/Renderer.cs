@@ -8,7 +8,8 @@ namespace flfview;
 /// </summary>
 public static class Renderer
 {
-    private const string Separator = " ";
+    // No separator: glyphs carry their own padding, so concatenating rows verbatim
+    // matches figlet's FullWidth output byte-for-byte.
 
     /// <summary>Renders <paramref name="text"/> into <c>font.Height</c> lines.</summary>
     public static string[] Render(FlfFont font, string text)
@@ -23,8 +24,6 @@ public static class Renderer
             var sb = new StringBuilder();
             for (var g = 0; g < glyphs.Count; g++)
             {
-                if (g > 0)
-                    sb.Append(Separator);
                 sb.Append(glyphs[g][row]);
             }
             lines[row] = sb.ToString().TrimEnd();
