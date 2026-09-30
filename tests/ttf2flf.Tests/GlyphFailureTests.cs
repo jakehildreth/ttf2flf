@@ -97,4 +97,40 @@ public class GlyphFailureTests
         Assert.True(canvas.CharWidth >= 1);
         Assert.True(canvas.ImageWidth > canvas.CharWidth && canvas.ImageHeight > canvas.LineHeight);
     }
+
+    [Fact]
+    public void Canvas_IsSizedFromBaselineExtent_DeepAscenderKeepsTopRow()
+    {
+        // 'A' sits on the baseline (span 1, bottom = global). 'B' is a deep ascender:
+        // span 24 but bottom 6 px above the baseline, like U+00C4 in More 15.
+        var glyphs = new Dictionary<int, GlyphRenderer.MeasuredGlyph>
+        {
+            ['A'] = new([new double[] { 1, 1 }], 2, 1, 31, 2, false),
+            ['B'] = new(Enumerable.Range(0, 24).Select(_ => new double[] { 1, 1 }).ToArray(), 2, 24, 25, 2, false),
+        };
+
+        var canvasPixels = GlyphRenderer.RequiredCanvasPixels(glyphs.Values);
+        var globalMaxBottom = 31;
+
+        // The deep ascender needs span + (global - bottom) = 24 + 6 = 30 px.
+        Assert.Equal(30, canvasPixels);
+
+        var placed = GlyphRenderer.PlaceOnCanvas(glyphs['B'], canvasPixels, globalMaxBottom, rightSpacer: 0);
+        var contentRows = Enumerable.Range(0, placed.Height)
+            .Where(y => placed.Pixels[y].Any(v => v > 0))
+            .ToList();
+
+        // Every source row landed, starting at row 0 (no silent down-shift).
+        Assert.Equal(24, contentRows.Count);
+        Assert.Equal(0, contentRows.First());
+        Assert.Equal(23, contentRows.Last()); // bottom edge: (30-1) - (31-25) = 23
+    }
+
+    [Fact]
+    public void Canvas_AllEmptyGlyphs_IsOneRow()
+    {
+        var glyphs = new[] { new GlyphRenderer.MeasuredGlyph([], 1, 0, 0, 1, true) };
+
+        Assert.Equal(2, GlyphRenderer.RequiredCanvasPixels(glyphs));
+    }
 }
