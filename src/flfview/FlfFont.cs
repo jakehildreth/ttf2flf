@@ -79,7 +79,50 @@ public sealed class FlfFont
     }
 
     public static FlfFont Load(string path) =>
-        Parse(File.ReadAllLines(path), Path.GetFileNameWithoutExtension(path));
+        Parse(DecodeLines(File.ReadAllBytes(path)), Path.GetFileNameWithoutExtension(path));
+
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    /// <summary>
+    /// Splits font bytes into lines (LF, CRLF, or CR) and decodes each line as UTF-8, as
+    /// FIGlet does. A line that is not valid UTF-8 becomes null; <see cref="Parse"/> then
+    /// treats its glyph as undefined, matching FIGlet, which drops such glyphs. The header
+    /// line is decoded leniently (an invalid hardblank byte, as in FIGlet's pyramid.flf,
+    /// only affects glyphs that FIGlet drops anyway). A UTF-8 BOM is ignored.
+    /// </summary>
+    public static List<string?> DecodeLines(byte[] bytes)
+    {
+        ReadOnlySpan<byte> data = bytes;
+        if (data.StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]))
+            data = data[3..];
+
+        var lines = new List<string?>();
+        while (!data.IsEmpty)
+        {
+            var end = data.IndexOfAny((byte)'\r', (byte)'\n');
+            var line = end < 0 ? data : data[..end];
+            lines.Add(lines.Count == 0 ? Encoding.UTF8.GetString(line) : DecodeStrict(line));
+            if (end < 0)
+                break;
+
+            var separatorLength = data[end] == '\r' && end + 1 < data.Length && data[end + 1] == '\n' ? 2 : 1;
+            data = data[(end + separatorLength)..];
+        }
+
+        return lines;
+    }
+
+    private static string? DecodeStrict(ReadOnlySpan<byte> line)
+    {
+        try
+        {
+            return StrictUtf8.GetString(line);
+        }
+        catch (DecoderFallbackException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// Returns the horizontal layout from the header's old_layout and optional
@@ -132,14 +175,17 @@ public sealed class FlfFont
         return line[..start];
     }
 
-    /// <summary>Parses FLF text lines. <paramref name="name"/> becomes <see cref="Name"/>.</summary>
-    public static FlfFont Parse(IReadOnlyList<string> lines, string name)
+    /// <summary>
+    /// Parses FLF text lines. <paramref name="name"/> becomes <see cref="Name"/>. A null
+    /// glyph line (not valid UTF-8, see <see cref="DecodeLines"/>) leaves that glyph undefined.
+    /// </summary>
+    public static FlfFont Parse(IReadOnlyList<string?> lines, string name)
     {
         if (lines.Count == 0)
             throw new FormatException("Empty file.");
 
         // Header: flf2a$ height baseline maxlen oldlayout commentlines [printdir] [fulllayout] [codetag]
-        var header = lines[0];
+        var header = lines[0] ?? "";
         if (header.Length < 6 || !header.StartsWith("flf2a", StringComparison.Ordinal))
             throw new FormatException("Bad signature.");
 
@@ -172,10 +218,17 @@ public sealed class FlfFont
                 throw new FormatException(
                     $"Unexpected end of file reading char {codePoint} (line {cursor + 1}).");
 
+            if (Enumerable.Range(cursor, height).Any(i => lines[i] is null))
+            {
+                // Not valid UTF-8: FIGlet drops the glyph, so the character stays undefined.
+                cursor += height;
+                continue;
+            }
+
             var rows = new string[height];
             for (var r = 0; r < height; r++)
             {
-                var row = StripEndmarks(lines[cursor + r], cursor + r + 1);
+                var row = StripEndmarks(lines[cursor + r]!, cursor + r + 1);
                 rows[r] = row.Replace(hardblank, ' ');
             }
 

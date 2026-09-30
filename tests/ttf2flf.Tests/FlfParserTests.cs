@@ -126,4 +126,44 @@ public class FlfParserTests
         Assert.Equal(figlet, viewer);
         Assert.Equal(["/\\@| )((", "@@@| )(("], viewer);
     }
+
+    [Fact]
+    public void GlyphWithInvalidUtf8_IsUndefined_LikeFiglet()
+    {
+        // 0x81 hardblank bytes, as in FIGlet's pyramid.flf. FIGlet decodes font lines as
+        // UTF-8 and drops a glyph whose bytes are not valid UTF-8.
+        using var temp = new TempDir();
+        var path = temp.File("invalid.flf");
+        var lines = BuildFlf(2, "flf2a\u0081 2 1 10 -1 1 0 0 0", new Dictionary<int, string[]>
+        {
+            ['B'] = ["|\u0081)@", "|\u0081)@@"],
+            ['C'] = ["é@", "é@@"],
+        });
+        // Lines with U+0081 are written as Latin-1 (the single byte 0x81); the rest as UTF-8.
+        File.WriteAllBytes(path, [.. lines.SelectMany(line =>
+            (line.Contains('\u0081') ? Encoding.Latin1 : Encoding.UTF8).GetBytes(line + "\n"))]);
+
+        var font = FlfFont.Load(path);
+
+        Assert.False(font.Glyphs.ContainsKey('B'));
+        Assert.Equal(["é", "é"], font.Glyphs['C']);
+        Assert.Equal(TestSupport.Figlet(path, "ACA"), Renderer.Render(font, "ACA"));
+        Assert.Equal(TestSupport.Figlet(path, "ABA"), Renderer.Render(font, "AA"));
+    }
+
+    [Fact]
+    public void Utf8FontWithBomAndCrlf_ParsesAsUtf8()
+    {
+        using var temp = new TempDir();
+        var path = temp.File("bom.flf");
+        var lines = BuildFlf(2, FullWidthHeader, new Dictionary<int, string[]>
+        {
+            ['A'] = ["█▀@", "▄█@@"],
+        });
+        File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        var font = FlfFont.Load(path);
+
+        Assert.Equal(["█▀", "▄█"], font.Glyphs['A']);
+    }
 }
