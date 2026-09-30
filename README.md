@@ -13,7 +13,10 @@ ttf2flf is a standalone **.NET command-line tool** (`src/ttf2flf`, produces a na
 
 ## Requirements
 
-- .NET 8.0 SDK or later to build from source (or download a self-contained binary)
+- .NET 10 SDK to build from source (or download a self-contained binary). Both
+  projects target `net10.0`. `global.json` pins SDK `10.0.100` with
+  `rollForward: latestFeature`, so any installed .NET 10.0 SDK at feature band 100 or
+  later builds the repository; an SDK from another major version is not used.
 - Windows, macOS, or Linux
 
 ## Installation
@@ -23,6 +26,10 @@ ttf2flf is a standalone **.NET command-line tool** (`src/ttf2flf`, produces a na
 git clone https://github.com/jakehildreth/ttf2flf.git
 cd ttf2flf
 
+# Build and test everything (ttf2flf.slnx)
+dotnet build
+dotnet test
+
 # Run from source
 dotnet run --project src/ttf2flf -- <font.ttf>
 
@@ -31,13 +38,17 @@ dotnet publish src/ttf2flf -c Release -r osx-arm64 --self-contained -o dist/osx-
 # Binary is at dist/osx-arm64/ttf2flf
 ```
 
+`dotnet test` uses Microsoft.Testing.Platform (selected in `global.json`). FIGlet
+interoperability tests skip when `figlet` is not on `PATH`; CI installs FIGlet on
+Linux and macOS and sets `REQUIRE_FIGLET=1` there so a missing `figlet` fails.
+
 ## Usage
 
 ```bash
 # Pixel-perfect (default): auto-detect grid, minimal height (ceil(span/2) rows)
 ttf2flf "PressStart2P.ttf" -o out/
 
-# Convert many at once
+# Convert many at once (several inputs require an output directory)
 ttf2flf fonts/*.ttf -o out/
 
 # Pin the render size (skips auto-detection)
@@ -54,16 +65,15 @@ ttf2flf "font.ttf" --monospace
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `-o`, `--output` | same as input | Output .flf path or directory |
+| `-o`, `--output` | same as input | Output .flf path, or a directory. With several inputs it must be a directory (created if missing); a `.flf` path or an existing file is rejected before any conversion. |
 | `--render-size` | auto | Explicit pixel render size (px) |
 | `--height` | 8 | Row height (pixel-perfect: px; `--aa`: terminal rows) |
 | `--aa` | off | Anti-aliased mode instead of half-block |
 | `--monospace` | off | Pad all glyphs to max advance width |
-| `--no-trim` | off | Keep empty top/bottom rows |
 | `--hardblank` | `$` | Hardblank character |
-| `--layout` | FullWidth | FullWidth, Kerned, or Smushed |
 | `--units-per-pixel` | auto | Override detection (grid = UnitsPerEm / n) |
 | `-v`, `--verbose` | off | Verbose logging |
+| `--version` | | Print the version (CalVer) |
 
 ### Output shape
 
@@ -74,21 +84,45 @@ measured at their true proportional width, bottom-aligned so x-height, capitals,
 descenders keep their correct relationship, and given a 1px right spacer column so
 letters stay legible.
 
+### Layout (fitting)
+
+Generated fonts always declare FIGlet **FullWidth** layout (`old_layout -1`,
+`full_layout 0`): FIGlet places glyphs side by side, and the 1px spacer inside each
+glyph provides the letter gap. There is no layout option. Kerning or smushing does
+not suit this geometry, and FIGlet smushes bytes, so it would corrupt the multibyte
+block characters. Do not force `figlet -k`, `-s`, or `-S` with these fonts.
+
+### Render failures
+
+A glyph that fails to render becomes a blank glyph with a `[!]` warning. The
+conversion fails with exit code 1, and writes no file, when any letter or digit
+(`A-Z`, `a-z`, `0-9`) fails, or when more than 10% of the 102 required glyphs fail.
+
 ## flfview (font previewer)
 
-An interactive terminal browser for the generated fonts in `Corpus/`. Type a word and
-it renders live in the selected font; switch fonts to compare the same word. Output
-matches `figlet`'s FullWidth rendering byte-for-byte.
+An interactive terminal browser for `.flf` fonts. Type a word and it renders live in
+the selected font; switch fonts to compare the same word. For FullWidth fonts, output
+matches `figlet`'s rendering. flfview does not implement kerning or smushing: fonts
+that declare another layout are skipped with a warning.
+
+The build and publish steps copy the bundled corpus beside the executable
+(`fonts/verified` from `Corpus/OutputFLF`, `fonts/clean` from `Corpus/FontBookFLF`).
+flfview reads those folders by default, so keep `fonts/` next to the binary when you
+copy it. `--dir <path>` replaces the defaults with one folder.
 
 ```bash
 dotnet run --project src/flfview          # interactive
 src/flfview/bin/Release/net10.0/flfview   # or the built binary
+
+# Publish a self-contained folder (binary + fonts/); copy the whole folder
+dotnet publish src/flfview -c Release -r osx-arm64 --self-contained -o dist/flfview-osx-arm64
+dist/flfview-osx-arm64/flfview --fonts
 ```
 
 | Key / command | Action |
 |----------------|--------|
 | printable chars | Append to word (live re-render) |
-| `Backspace` | Delete last char |
+| `Backspace` | Delete the last character (a whole emoji or other supplementary character) |
 | `Up`/`Down`, `Tab`/`Shift+Tab` | Previous / next font |
 | `PgUp`/`PgDn` | Jump ±10 fonts |
 | `/all <word>` | Render the word in every font, paged |
@@ -104,6 +138,7 @@ One-shot (scriptable) mode:
 flfview --render "Hello" --font "Jewel 6"
 flfview --render "Sphinx" --all
 flfview --fonts
+flfview --version
 ```
 
 Fonts are tagged by quality tier: `[v]` verified (bitmap-exact against the author's
@@ -125,8 +160,9 @@ So **2 pixel rows = 1 terminal row**, allowing precise bitmap font rendering.
 Pixel-style fonts are outline fonts that mimic pixels — they carry no embedded bitmap
 strike, so detection works from the font's geometry:
 
-1. **Name hint.** A number ≥ 5 in the family name is the design grid
-   (e.g., "Jacquard12" → 12, "Jersey20" → 20).
+1. **Name hint.** The last number from 5 to 64 in the family name is the design grid
+   (e.g., "Jacquard12" → 12, "3270 Pixel 8" → 8). Numbers outside that range, such as
+   model or version numbers ("3270 Regular", "SuperMario256"), are ignored.
 2. **Stroke-width alignment.** For thick-stroke fonts, render a probe glyph across
    candidate sizes and measure how often stroke widths are integer multiples of the
    thinnest stroke; the smallest such size is the grid.
@@ -156,6 +192,8 @@ Generated FLF files include:
 
 - 102 required FIGcharacters (ASCII 32-126 + German characters: Ä Ö Ü ä ö ü ß)
 - Comment block with font name, source file, timestamp, and generator version
+- Header `MaxLength` equal to the longest glyph-data line in UTF-8 bytes, endmarks
+  included (the block characters are 3 bytes each)
 - **Pixel-perfect mode:** half-block characters for precise pixel rendering (▀▄█)
 - **Standard mode:** Unicode block characters for shading (░▒▓█)
 
@@ -168,8 +206,8 @@ compact FLF files without losing any visual information.
 # With figlet
 figlet -f ./myfont.flf "Hello World"
 
-# Or preview with the bundled viewer
-flfview --render "Hello World" --font "myfont"
+# Or preview with the bundled viewer (--dir selects the folder that holds myfont.flf)
+flfview --dir . --render "Hello World" --font "myfont"
 ```
 
 **Note:** Pixel-perfect fonts with half-block characters require terminal support for
@@ -190,6 +228,18 @@ converter:
   reference PNGs.
 
 Browse them all with `flfview`.
+
+`tests/ttf2flf.Tests/Fixtures/PressStart2P-Regular.ttf` is the test font (Press Start 2P,
+SIL Open Font License 1.1; see `OFL.txt` beside it). It is the only committed TTF.
+
+## Versioning
+
+Versions use CalVer (`yyyy.M.dHHmm`). The single source is the `CalVer` property in
+`Directory.Build.props`; bump it at release, or override it per build with
+`dotnet build -p:CalVer=2026.10.11200`. It sets the informational version shown by
+`--version` and written to each generated font's `Generator:` comment. Assembly and file
+versions carry the same value as `yyyy.M.d.HHmm`, because each .NET assembly version part
+is limited to 65535.
 
 ## Links
 
