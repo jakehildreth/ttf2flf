@@ -1,113 +1,174 @@
 function Get-BitmapFontPixelHeight {
     <#
     .SYNOPSIS
-        Detects the native design size of a bitmap font.
+        Detects the native design grid of a pixel-style font.
     .DESCRIPTION
-        Probes a bitmap font at various sizes to find where pixels render cleanly
-        without antialiasing, indicating the native bitmap design size.
+        These fonts are outline fonts that mimic pixels; none carry an embedded bitmap
+        strike, so pixel "cleanliness" alone cannot find the native grid. Two signals,
+        in priority order:
+
+        1. Name hint. Pixel fonts almost always encode their grid in the family name
+           (Jacquard12 -> 12, Jewel 6 -> 6, Jersey20 -> 20). A number >= 5 wins outright.
+
+        2. Stroke-width alignment. For thick-stroke fonts without a usable name number,
+           binarize a probe glyph across candidate sizes and measure the fraction of
+           stroke run-lengths that are integer multiples of the minimum run. Rendering on
+           the native grid (or an integer multiple) keeps strokes uniform (~100% aligned);
+           off-grid sizes break alignment. The fundamental is the smallest size that is
+           aligned AND whose integer multiples are all aligned AND that shows real
+           discrimination (some off-grid size renders misaligned).
+
+        Thin-stroke fonts (Jacquard, blocco) render cleanly at every size and yield no
+        alignment signal; they rely on the name hint or the 8px default.
+
+        Height is the native grid itself. The rasterizer reproduces the grid faithfully
+        only at the native size (and exact integer multiples); it anti-aliases and distorts
+        thin strokes at any supersampled "legibility" multiple, so we always render 1:1.
     .PARAMETER FontFamily
         The SixLabors.Fonts.FontFamily to analyze.
+    .PARAMETER Height
+        When specified, skips detection and detects only the optimal width for this height.
+    .PARAMETER UnitsPerPixel
+        Font units per pixel. When specified, the height is UnitsPerEm / UnitsPerPixel and
+        only the width is detected.
     .OUTPUTS
-        [int] The detected font size.
+        [PSCustomObject] with Height and Width (both [int]).
     .NOTES
-        This is an internal helper function for bitmap font detection.
-        Returns the font SIZE, caller calculates pixel height from metrics.
+        Internal helper. Width is the advance width of the widest probe glyph, in pixels.
     #>
     [CmdletBinding()]
-    [OutputType([int])]
+    [OutputType([PSCustomObject])]
     param(
         [Parameter(Mandatory)]
-        [SixLabors.Fonts.FontFamily]$FontFamily
+        [SixLabors.Fonts.FontFamily]$FontFamily,
+
+        [Parameter()]
+        [int]$Height,
+
+        [Parameter()]
+        [int]$UnitsPerPixel
     )
 
-    # Test sizes to try (common bitmap font design sizes)
-    $testSizes = @(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 24, 32)
-    
-    # Test with 'H' - simple character with clear vertical/horizontal strokes
-    $testChar = [char]72  # 'H'
-    
-    Write-Verbose "[+] Auto-detecting bitmap font design size..."
-    
-    # Collect all candidates that meet the threshold
-    $candidates = @()
-    
+    # Advance width of the widest probe glyph at a given font size
+    $getWidth = {
+        param([SixLabors.Fonts.Font]$Font)
+        $maxWidth = 1
+        foreach ($probe in @('M', 'W', '@', 'm')) {
+            try {
+                $opts = [SixLabors.Fonts.TextOptions]::new($Font)
+                $adv = [SixLabors.Fonts.TextMeasurer]::MeasureAdvance($probe, $opts)
+                $w = [Math]::Max(1, [Math]::Ceiling($adv.Width))
+                if ($w -gt $maxWidth) { $maxWidth = $w }
+            } catch {
+                Write-Verbose "[+]     Width probe for '$probe' failed: $_"
+            }
+        }
+        return $maxWidth
+    }
+
+    # Render at the native grid. These are outline fonts mimicking pixels; the
+    # rasterizer reproduces the grid faithfully ONLY at the native size (and exact
+    # integer multiples), and it anti-aliases/distorts at non-grid sizes. A 16px
+    # "legibility" supersample destroys thin-stroke fonts (verified via PNG parity),
+    # so we always render 1:1 at the detected grid.
+    $newResult = {
+        param([int]$Grid, [int]$Width)
+        [PSCustomObject]@{ Height = $Grid; Width = $Width }
+    }
+
+    # UnitsPerPixel: derive height directly from metrics
+    if ($UnitsPerPixel -gt 0) {
+        # Family metrics can report UnitsPerEm = 0; read it from a sized instance.
+        $probe = $FontFamily.CreateFont(12)
+        $unitsPerEm = $probe.FontMetrics.UnitsPerEm
+        $grid = [Math]::Max(1, [int][Math]::Round($unitsPerEm / $UnitsPerPixel))
+        $width = & $getWidth $FontFamily.CreateFont($grid)
+        Write-Verbose "[+] UnitsPerPixel=$UnitsPerPixel (UnitsPerEm=$unitsPerEm) -> height $grid, width $width"
+        return & $newResult $grid $width
+    }
+
+    # Explicit height: detect width only
+    if ($Height -gt 0) {
+        $width = & $getWidth $FontFamily.CreateFont($Height)
+        Write-Verbose "[+] Using specified height $Height, detected width $width"
+        return [PSCustomObject]@{ Height = $Height; Width = $width }
+    }
+
+    # --- Detection ---
+    $fontName = $FontFamily.Name
+
+    # 1. Name hint: a number >= 5 in the family name is the design grid.
+    if ($fontName -match '(\d+)') {
+        $hint = [int]$Matches[1]
+        if ($hint -ge 5) {
+            $width = & $getWidth $FontFamily.CreateFont($hint)
+            $rec = & $newResult $hint $width
+            Write-Verbose "[+] Detected grid $hint from font name (rendering at $($rec.Height), width $width)"
+            return $rec
+        }
+    }
+
+    # 2. Stroke-width alignment: find the fundamental period for thick-stroke fonts.
+    $testChar = [char]72  # 'H' - strong horizontal + vertical strokes
+    $testSizes = @(8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40)
+    $clean = @{}
+
     foreach ($size in $testSizes) {
-        $font = $FontFamily.CreateFont($size)
-        $metrics = $font.FontMetrics
-        
-        # Calculate line height from font metrics
-        $scale = $font.Size / $metrics.UnitsPerEm
-        $ascender = $metrics.HorizontalMetrics.Ascender * $scale
-        $descender = [Math]::Abs($metrics.HorizontalMetrics.Descender * $scale)
-        $lineHeight = [Math]::Ceiling($ascender + $descender)
-        
-        Write-Verbose "[+]   Testing size $size : lineHeight=$lineHeight"
-        
-        # Skip sizes where metrics suggest heavy scaling (not native)
-        # For bitmap fonts, lineHeight should be reasonably close to the font size
-        if ($lineHeight -lt ($size - 1) -or $lineHeight -gt ($size + 2)) {
-            continue
-        }
-        
         try {
-            $bitmap = Get-GlyphBitmap -Font $font -Character $testChar -Height $lineHeight -PixelPerfect
-            
-            # Check for clean pixel alignment - bitmap fonts should have
-            # mostly full-on (1.0) or full-off (0.0) pixels, not anti-aliased grays
-            $totalPixels = 0
-            $cleanPixels = 0
-            
-            for ($y = 0; $y -lt $bitmap.Pixels.Count; $y++) {
-                $row = $bitmap.Pixels[$y]
-                for ($x = 0; $x -lt $row.Count; $x++) {
-                    $pixel = $row[$x]
-                    $totalPixels++
-                    # Consider a pixel "clean" if it's very close to 0 or 1
-                    if ($pixel -lt 0.1 -or $pixel -gt 0.9) {
-                        $cleanPixels++
-                    }
+            $font = $FontFamily.CreateFont($size)
+            $m = $font.FontMetrics
+            $sc = $font.Size / $m.UnitsPerEm
+            $lh = [Math]::Ceiling(($m.HorizontalMetrics.Ascender * $sc) + [Math]::Abs($m.HorizontalMetrics.Descender * $sc))
+            $bitmap = Get-GlyphBitmap -Font $font -Character $testChar -Height $lh -PixelPerfect
+
+            # Collect horizontal on-run lengths
+            $runs = [System.Collections.Generic.List[int]]::new()
+            foreach ($row in $bitmap.Pixels) {
+                $x = 0
+                $w = $row.Count
+                while ($x -lt $w) {
+                    if ($row[$x] -ge 0.5) {
+                        $len = 0
+                        while ($x -lt $w -and $row[$x] -ge 0.5) { $len++; $x++ }
+                        if ($len -gt 0) { $runs.Add($len) }
+                    } else { $x++ }
                 }
             }
-            
-            $cleanRatio = if ($totalPixels -gt 0) { $cleanPixels / $totalPixels } else { 0 }
-            Write-Verbose "[+]     Clean pixel ratio: $([math]::Round($cleanRatio, 2))"
-            
-            # Bitmap fonts at native size should have >85% clean pixels
-            if ($cleanRatio -ge 0.85) {
-                $candidates += [PSCustomObject]@{
-                    Size = $size
-                    LineHeight = $lineHeight
-                    CleanRatio = $cleanRatio
-                }
+            if ($runs.Count -lt 3) { $clean[$size] = 0; continue }
+
+            $min = ($runs | Measure-Object -Minimum).Minimum
+            if ($min -lt 1) { $clean[$size] = 0; continue }
+            $aligned = 0
+            foreach ($r in $runs) {
+                $k = [Math]::Round($r / [double]$min)
+                if ($k -ge 1 -and [Math]::Abs($r - $k * $min) -le 0.5) { $aligned++ }
             }
+            $clean[$size] = $aligned / $runs.Count
+            Write-Verbose "[+]   size $size : aligned $([Math]::Round($clean[$size], 2))"
         } catch {
-            Write-Verbose "[+]     Render failed: $_"
-            continue
+            $clean[$size] = 0
         }
     }
-    
-    # Choose the best candidate
-    if ($candidates.Count -gt 0) {
-        # Check if font name contains a number (e.g., "Jacquard12", "Jersey20")
-        # which often indicates the design pixel height
-        $fontName = $FontFamily.Name
-        if ($fontName -match '(\d+)') {
-            $nameHint = [int]$matches[1]
-            # If a candidate's size matches the name hint, prefer it
-            $hintMatch = $candidates | Where-Object { $_.Size -eq $nameHint } | Select-Object -First 1
-            if ($hintMatch) {
-                Write-Verbose "[+] Detected design size: $($hintMatch.Size) (from font name, lineHeight: $($hintMatch.LineHeight), clean: $([math]::Round($hintMatch.CleanRatio, 2)))"
-                return [int]$hintMatch.Size
+
+    # Discrimination: a thick-stroke font has at least one off-grid size that renders dirty.
+    $hasDiscrimination = @($testSizes | Where-Object { $clean[$_] -lt 0.5 }).Count -ge 1
+
+    if ($hasDiscrimination) {
+        foreach ($size in $testSizes) {
+            if ($clean[$size] -lt 0.85) { continue }
+            $multiples = @($testSizes | Where-Object { $_ % $size -eq 0 })
+            $cleanMultiples = @($multiples | Where-Object { $clean[$_] -ge 0.85 })
+            if ($multiples.Count -ge 2 -and $cleanMultiples.Count -eq $multiples.Count) {
+                $width = & $getWidth $FontFamily.CreateFont($size)
+                $rec = & $newResult $size $width
+                Write-Verbose "[+] Detected grid $size via stroke alignment (rendering at $($rec.Height), width $width)"
+                return $rec
             }
         }
-        
-        # Otherwise prefer smallest size with clean rendering
-        $bestCandidate = $candidates | Sort-Object Size, @{Expression='CleanRatio'; Descending=$true} | Select-Object -First 1
-        Write-Verbose "[+] Detected design size: $($bestCandidate.Size) (lineHeight: $($bestCandidate.LineHeight), clean: $([math]::Round($bestCandidate.CleanRatio, 2)))"
-        return [int]$bestCandidate.Size
     }
-    
-    # If detection fails, default to 8
-    Write-Verbose "[+] Could not detect design size, defaulting to 8"
-    return 8
+
+    # 3. No signal (thin-stroke or scalable font): default 8
+    $width = & $getWidth $FontFamily.CreateFont(8)
+    Write-Verbose "[+] No grid signal; defaulting to 8 (rendering at $((& $newResult 8 $width).Height))"
+    return & $newResult 8 $width
 }

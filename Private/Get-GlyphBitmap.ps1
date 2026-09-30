@@ -12,6 +12,12 @@ function Get-GlyphBitmap {
         The character to render.
     .PARAMETER Height
         The target height in rows for the output ASCII art.
+    .PARAMETER Width
+        Exact output width in pixels for pixel-perfect mode. Pads with off-pixels
+        if the glyph is narrower, clips if wider. Overrides MaxWidth.
+    .PARAMETER FontCollection
+        Optional SixLabors font collection (accepted for caller convenience; the
+        Font object already carries all rendering state).
     .PARAMETER MaxWidth
         Maximum width for the rendered glyph (for monospace mode).
     .PARAMETER PixelPerfect
@@ -33,6 +39,12 @@ function Get-GlyphBitmap {
 
         [Parameter(Mandatory)]
         [int]$Height,
+
+        [Parameter()]
+        [int]$Width = 0,
+
+        [Parameter()]
+        $FontCollection,
 
         [Parameter()]
         [int]$MaxWidth = 0,
@@ -137,14 +149,21 @@ function Get-GlyphBitmap {
                 }
             }
 
-            # For pixel fonts, extract exactly what was rendered
-            # Use the actual bounding box, not font metrics
-            $outHeight = $maxY - $minY + 1
+            # Height is always the full requested cell so every glyph in the FLF
+            # shares a uniform row count; only the WIDTH is the tight bounding box.
+            $outHeight = $Height
             $outWidth = $maxX - $minX + 1
+            # Anchor to the BASELINE. Each glyph's natural render keeps its true vertical
+            # relationship: capitals/ascenders rise to the cap, x-height and ':' sit lower,
+            # descenders (g j p q y) extend below the baseline. Mapping the glyph's baseline
+            # (image maxY for non-descenders) to the cell baseline row preserves all of this.
+            $baselineRow = [Math]::Round($ascender)
+            $topOffset = $maxY - $baselineRow
 
-            # Apply max width for monospace if specified
-            if ($MaxWidth -gt 0 -and $outWidth -lt $MaxWidth) {
-                # Pad to MaxWidth but keep actual content
+            # Exact output width: -Width wins, else pad to -MaxWidth for monospace
+            if ($Width -gt 0) {
+                $targetWidth = $Width
+            } elseif ($MaxWidth -gt 0 -and $outWidth -lt $MaxWidth) {
                 $targetWidth = $MaxWidth
             } else {
                 $targetWidth = $outWidth
@@ -157,7 +176,7 @@ function Get-GlyphBitmap {
                 for ($x = 0; $x -lt $targetWidth; $x++) {
                     if ($x -lt $outWidth) {
                         $srcX = $minX + $x
-                        $srcY = $minY + $y
+                        $srcY = $minY + $y - $topOffset
                         if ($srcX -ge 0 -and $srcX -lt $imageWidth -and $srcY -ge 0 -and $srcY -lt $imageHeight) {
                             $pixel = $image[$srcX, $srcY]
                             $brightness = ($pixel.R + $pixel.G + $pixel.B) / (255.0 * 3)
