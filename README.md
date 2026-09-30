@@ -103,7 +103,10 @@ conversion fails with exit code 1, and writes no file, when any letter or digit
 An interactive terminal browser for `.flf` fonts. Type a word and it renders live in
 the selected font; switch fonts to compare the same word. For FullWidth fonts, output
 matches `figlet`'s rendering. flfview does not implement kerning or smushing: fonts
-that declare another layout are skipped with a warning.
+that declare another layout are skipped with a warning. Like FIGlet, flfview decodes font
+lines as UTF-8 and treats a glyph that is not valid UTF-8 as undefined. One difference
+remains: a character the font does not define renders as one blank glyph of the space
+width, while FIGlet omits it.
 
 The build and publish steps copy the bundled corpus beside the executable
 (`fonts/verified` from `Corpus/OutputFLF`, `fonts/clean` from `Corpus/FontBookFLF`).
