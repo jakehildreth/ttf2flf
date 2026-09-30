@@ -166,4 +166,33 @@ public class FlfParserTests
 
         Assert.Equal(["█▀", "▄█"], font.Glyphs['A']);
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public void FontEndingBeforeGermanBlock_LoadsWithGermanUndefined(int trailingBlankLines)
+    {
+        using var temp = new TempDir();
+        var path = temp.File("ascii-only.flf");
+        var lines = BuildFlf(2, FullWidthHeader).Take(2 + 95 * 2).Concat(Enumerable.Repeat("", trailingBlankLines));
+        File.WriteAllText(path, string.Join('\n', lines) + '\n');
+
+        var font = FlfFont.Load(path);
+
+        Assert.Equal(95, font.Glyphs.Count);
+        Assert.False(font.Glyphs.ContainsKey('Ä'));
+        Assert.Equal(TestSupport.Figlet(path, "Hi~"), Renderer.Render(font, "Hi~"));
+    }
+
+    [Theory]
+    [InlineData(2 + 50 * 2)]     // ends at a glyph boundary inside ASCII
+    [InlineData(2 + 95 * 2 + 1)] // ends inside the first German glyph
+    public void FontEndingElsewhere_IsAFormatError(int keptLines)
+    {
+        var lines = BuildFlf(2, FullWidthHeader).Take(keptLines).ToList();
+
+        var ex = Assert.Throws<FormatException>(() => FlfFont.Parse(lines, "test"));
+
+        Assert.Contains("Unexpected end of file", ex.Message);
+    }
 }
