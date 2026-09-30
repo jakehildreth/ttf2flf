@@ -52,6 +52,34 @@ public class ConverterCliTests
         Assert.Equal(2, output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void InputsWithSameBaseName_FailBeforeWritingAnyOutput(bool withOutputDirectory)
+    {
+        using var temp = new TempDir();
+        var first = CopyFixtureInto(temp.File("a"), "same.ttf");
+        var second = CopyFixtureInto(temp.File("b"), "same.ttf");
+        var outDir = temp.File("out");
+        string[] args = withOutputDirectory ? [first, second, "-o", outDir] : [first, first];
+
+        var (exitCode, output, error) = TestSupport.RunConverter(args);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("would both write", error);
+        Assert.Contains("same.flf", error);
+        Assert.Equal("", output);
+        Assert.Empty(Directory.GetFiles(temp.Path, "*.flf", SearchOption.AllDirectories));
+    }
+
+    private static string CopyFixtureInto(string directory, string name)
+    {
+        Directory.CreateDirectory(directory);
+        var target = Path.Combine(directory, name);
+        File.Copy(TestSupport.FixtureFont, target);
+        return target;
+    }
+
     [Fact]
     public void SingleInput_WithFlfOutputPath_WritesThatFile()
     {
