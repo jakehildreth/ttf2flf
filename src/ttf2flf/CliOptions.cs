@@ -24,7 +24,7 @@ public static class CliParser
               --height <4..64>        Force pixel size (skip auto-detection); with --aa = terminal rows (default 8)
               --aa                    Anti-aliased mode (░▒▓█ blocks instead of pixel-perfect half blocks)
               --monospace             Pad all glyphs to max advance width
-              --hardblank <char>      Hardblank character (default: $)
+              --hardblank <char>      Hardblank character (default: $; not a block character the mode emits)
               --units-per-pixel <n>   Override detection: grid = UnitsPerEm / n
               --render-size <px>      Explicit render size (wins over detection; skips calibration)
           -v, --verbose               Verbose output
@@ -138,6 +138,18 @@ public static class CliParser
         if (options.InputPaths.Count == 0)
         {
             error.WriteLine("error: at least one input font path is required");
+            goto Fail;
+        }
+
+        // FIGlet prints every hardblank as a space, so a hardblank that also appears in
+        // glyph data would blank part of every glyph. Checked after all options are read
+        // because --aa selects the encoder.
+        var glyphCharacters = options.AntiAliased ? BlockEncoder.GlyphCharacters : HalfBlockEncoder.GlyphCharacters;
+        if (glyphCharacters.Contains(options.Hardblank))
+        {
+            error.WriteLine(
+                $"error: --hardblank '{options.Hardblank}' appears in {(options.AntiAliased ? "anti-aliased" : "pixel")} " +
+                $"glyph data ({glyphCharacters}); choose another character");
             goto Fail;
         }
 
