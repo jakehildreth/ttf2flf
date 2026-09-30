@@ -70,7 +70,7 @@ ttf2flf "font.ttf" --monospace
 | `--height` | 8 | Row height (pixel-perfect: px; `--aa`: terminal rows) |
 | `--aa` | off | Anti-aliased mode instead of half-block |
 | `--monospace` | off | Pad all glyphs to max advance width |
-| `--hardblank` | `$` | Hardblank character |
+| `--hardblank` | `$` | Hardblank character. Block characters that the selected mode writes (`▀▄█` in pixel mode, `░▒▓█` with `--aa`) are rejected, because FIGlet prints every hardblank as a space. |
 | `--units-per-pixel` | auto | Override detection (grid = UnitsPerEm / n) |
 | `-v`, `--verbose` | off | Verbose logging |
 | `--version` | | Print the version (CalVer) |

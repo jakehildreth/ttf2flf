@@ -5,6 +5,9 @@ namespace ttf2flf;
 /// <summary>Converts pixel brightness to anti-aliased block characters (░▒▓█).</summary>
 public static class BlockEncoder
 {
+    /// <summary>Non-space characters <see cref="Encode"/> can emit.</summary>
+    public const string GlyphCharacters = "░▒▓█";
+
     public static string[] Encode(double[][] pixels)
     {
         var rows = new List<string>(pixels.Length);
