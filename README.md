@@ -175,8 +175,8 @@ strike, so detection works from the font's geometry:
 
 The **render size** is computed separately from the grid as `grid × UnitsPerEm /
 capHeightInUnits`, the size at which the rasterizer reproduces the design grid 1:1. The
-bundled corpus fonts are calibrated per-font (see `Corpus/render_sizes.json`); override
-any font with `--render-size`.
+bundled corpus fonts are calibrated per-font (see `src/ttf2flf/CalibratedRenderSizes.cs`);
+override any font with `--render-size`.
 
 ### Manual size selection
 
@@ -228,7 +228,6 @@ converter:
 - `Corpus/FontBookFLF/` — additional pixel fonts converted from an installed font
   library (the `name_Xh`/`name_Xp` variants plus extras like 3270, UniVGA16, C64 Pro).
 - `Corpus/Reference/` — the authors' reference sprite-sheet PNGs.
-- `Corpus/render_sizes.json` — the calibrated per-font render sizes.
 - `Corpus/compare_png.py` — the parity harness that compares generated FLF glyphs to the
   reference PNGs: `python3 Corpus/compare_png.py <flf_dir> --corpus-dir <extracted zips>`
   (`--corpus-dir` defaults to `$TTF2FLF_CORPUS_DIR`, then `/tmp/ttfcorpus`).

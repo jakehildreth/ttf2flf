@@ -282,7 +282,7 @@ public static class Program
             verbose($"[+] Design grid: {gridSize}px");
 
             // Render at the calibrated/computed size (outline em >> design grid), NOT the
-            // grid. --render-size wins; else render_sizes.json; else scale+nudge.
+            // grid. --render-size wins; else the calibration table; else scale+nudge.
             var renderSize = options.RenderSize
                 ?? FontGridDetector.DetectRenderSize(fontFamily, gridSize, resolvedPath, verbose);
             verbose($"[+] Rendering at {renderSize}px (grid {gridSize})");
