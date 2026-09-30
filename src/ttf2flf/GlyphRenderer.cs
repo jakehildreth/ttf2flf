@@ -6,7 +6,7 @@ using SixLabors.ImageSharp.Processing;
 
 namespace ttf2flf;
 
-/// <summary>Port of Private/Get-GlyphBitmap.ps1.</summary>
+/// <summary>Renders a glyph to a pixel bitmap: tight bounding box, baseline/bottom anchoring.</summary>
 public static class GlyphRenderer
 {
     /// <summary>

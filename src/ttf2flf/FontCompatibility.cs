@@ -3,7 +3,7 @@ using SixLabors.Fonts.Unicode;
 
 namespace ttf2flf;
 
-/// <summary>Port of Private/Test-FontCompatibility.ps1 (warnings only).</summary>
+/// <summary>Detects symbol/emoji fonts unlikely to convert cleanly (warnings only).</summary>
 public static class FontCompatibility
 {
     private static readonly string[] SymbolPatterns =
