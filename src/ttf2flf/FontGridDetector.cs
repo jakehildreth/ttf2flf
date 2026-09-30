@@ -46,7 +46,15 @@ public static class FontGridDetector
             return entry.RenderSize;
         }
 
-        // 2. Compute from scale, then nudge by stroke-singleness.
+        return ComputedRenderSize(fontFamily, grid, verbose);
+    }
+
+    /// <summary>
+    /// Render size from the font's scale (grid × UnitsPerEm / capHeightInUnits), nudged to
+    /// a nearby size whose strokes are single-width.
+    /// </summary>
+    private static int ComputedRenderSize(FontFamily fontFamily, int grid, Action<string>? verbose)
+    {
         var probeFont = fontFamily.CreateFont(1000);
         var unitsPerEm = probeFont.FontMetrics.UnitsPerEm;
         var capBounds = TextMeasurer.MeasureBounds("H", new TextOptions(probeFont));
@@ -83,6 +91,33 @@ public static class FontGridDetector
         verbose?.Invoke(
             $"[+] Render size {chosen} (grid {grid}, upem {unitsPerEm}, capUnits {capUnits:F1}, scale {scale:F3}, base {baseSize})");
         return chosen;
+    }
+
+    /// <summary>
+    /// Thickest "thinnest stroke" (px) that still confirms a name hint. At the right grid a
+    /// design pixel renders as 1 px (2 px with rasterizer jitter or heavy designs); a hint
+    /// k times too large (e.g. "C64" for an 8 px font) makes the thinnest stroke about k px.
+    /// </summary>
+    private const int MaxHintStrokePixels = 2;
+
+    /// <summary>
+    /// Checks a name hint against the glyph geometry: renders 'H' at the hint's computed
+    /// render size (and ±1) and accepts the hint when the thinnest stroke is at most
+    /// <see cref="MaxHintStrokePixels"/> px. A font the probe cannot measure keeps its hint.
+    /// </summary>
+    public static bool StrokesConfirmGrid(FontFamily fontFamily, int hint, out int thinnestStroke)
+    {
+        var renderSize = ComputedRenderSize(fontFamily, hint, verbose: null);
+        thinnestStroke = int.MaxValue;
+        foreach (var size in new[] { renderSize - 1, renderSize, renderSize + 1 })
+        {
+            if (size >= 1 && MeasurePixelPerfectRuns(fontFamily.CreateFont(size), 'H', out var run))
+            {
+                thinnestStroke = Math.Min(thinnestStroke, run);
+            }
+        }
+
+        return thinnestStroke == int.MaxValue || thinnestStroke <= MaxHintStrokePixels;
     }
 
     /// <summary>True when the probe glyph's thinnest stroke renders as a single pixel.</summary>
@@ -217,12 +252,19 @@ public static class FontGridDetector
 
         var fontName = fontFamily.Name;
 
-        // 1. Name hint: the last plausible grid number in the family name.
+        // 1. Name hint: the last plausible grid number in the family name, confirmed by
+        //    the stroke probe (rejects model numbers such as "C64" on an 8 px font).
         if (GridHintFromName(fontName) is { } hint)
         {
-            var width = GetWidth(fontFamily.CreateFont(hint));
-            verbose?.Invoke($"[+] Detected grid {hint} from font name (width {width})");
-            return new GridSize(hint, width);
+            if (StrokesConfirmGrid(fontFamily, hint, out var thinnestStroke))
+            {
+                var width = GetWidth(fontFamily.CreateFont(hint));
+                verbose?.Invoke($"[+] Detected grid {hint} from font name (width {width})");
+                return new GridSize(hint, width);
+            }
+
+            verbose?.Invoke(
+                $"[+] Ignoring name hint {hint}: thinnest stroke is {thinnestStroke}px at its render size");
         }
 
         // 2. Stroke-width alignment: find the fundamental period for thick-stroke fonts.
