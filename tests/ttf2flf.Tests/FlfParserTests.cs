@@ -216,4 +216,57 @@ public class FlfParserTests
 
         Assert.Contains("Unexpected end of file", ex.Message);
     }
+
+    [Theory]
+    [InlineData("169", 169)]
+    [InlineData("0xA9 REGISTERED SIGN", 169)]
+    [InlineData("0251", 169)]
+    [InlineData("0xa9", 169)]
+    [InlineData("-2 Latin-1 mortality", -2)]
+    [InlineData("notatag", null)]
+    [InlineData("0x", null)]
+    [InlineData("-", null)]
+    [InlineData("099", null)] // 9 is not an octal digit
+    [InlineData("9999999999999", null)] // overflow
+    public void ParseCodeTag_AcceptsSpecFormats(string tag, int? expected)
+    {
+        Assert.Equal(expected, FlfFont.ParseCodeTag(tag));
+    }
+
+    [Fact]
+    public void CodeTaggedCharacters_Render_LikeFiglet()
+    {
+        using var temp = new TempDir();
+        var path = temp.File("codetags.flf");
+        var lines = BuildFlf(2, FullWidthHeader);
+        lines.AddRange([
+            "0x00A9 COPYRIGHT SIGN", "(C)@", "(C)@@",
+            "-2 Latin-1 mortality", "ww@", "ww@@",
+            "233 E WITH ACUTE", "E'@", "E'@@",
+            "not a tag",
+        ]);
+        File.WriteAllText(path, string.Join('\n', lines) + '\n', new UTF8Encoding(false));
+
+        var font = FlfFont.Load(path);
+
+        Assert.Equal(["(C)", "(C)"], font.GetGlyph(new System.Text.Rune(0xA9)));
+        Assert.Equal(["E'", "E'"], font.GetGlyph(new System.Text.Rune(0xE9)));
+        Assert.Equal(["A(C)A", "A(C)A"], Renderer.Render(font, "A\u00A9A"));
+        Assert.Equal(TestSupport.Figlet(path, "A\u00A9A"), Renderer.Render(font, "A\u00A9A"));
+        // The negative-tagged glyph is parsed (keeping the position) but not mapped:
+        // code point -2 cannot be typed.
+        Assert.False(font.Glyphs.ContainsKey(-2));
+        Assert.DoesNotContain(font.Glyphs.Values, rows => rows.Contains("ww"));
+    }
+
+    [Fact]
+    public void CodeTaggedBlock_TruncatedMidGlyph_IsAFormatError()
+    {
+        var lines = BuildFlf(2, FullWidthHeader);
+        lines.AddRange(["169", "(C)@"]); // tag plus one of two rows
+
+        var ex = Assert.Throws<FormatException>(() => FlfFont.Parse(lines, "test"));
+
+        Assert.Contains("code-tagged", ex.Message);
+    }
 }
