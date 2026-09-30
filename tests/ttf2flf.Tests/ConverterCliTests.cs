@@ -109,6 +109,62 @@ public class ConverterCliTests
         Assert.Empty(Directory.GetFiles(temp.Path, "*.flf"));
     }
 
+    [Theory]
+    [InlineData("█", false)]
+    [InlineData("▀", false)]
+    [InlineData("▄", false)]
+    [InlineData("░", true)]
+    [InlineData("▒", true)]
+    [InlineData("▓", true)]
+    [InlineData("█", true)]
+    public void Hardblank_ThatAppearsInGlyphData_IsRejected(string hardblank, bool antiAliased)
+    {
+        using var temp = new TempDir();
+        var input = temp.CopyFixtureFont("Font.ttf");
+        string[] args = antiAliased
+            ? [input, "--aa", "--hardblank", hardblank]
+            : [input, "--hardblank", hardblank];
+
+        var (exitCode, _, error) = TestSupport.RunConverter(args);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("appears in", error);
+        Assert.Empty(Directory.GetFiles(temp.Path, "*.flf"));
+    }
+
+    [Theory]
+    [InlineData("▀", true)]  // half blocks never appear in anti-aliased output
+    [InlineData("░", false)] // shades never appear in pixel output
+    public void Hardblank_FromTheOtherModesAlphabet_IsAccepted(string hardblank, bool antiAliased)
+    {
+        using var temp = new TempDir();
+        var input = temp.CopyFixtureFont("Font.ttf");
+        var target = temp.File("font.flf");
+        string[] args = antiAliased
+            ? [input, "--aa", "--hardblank", hardblank, "-o", target]
+            : [input, "--hardblank", hardblank, "-o", target];
+
+        var (exitCode, _, error) = TestSupport.RunConverter(args);
+
+        Assert.True(exitCode == 0, error);
+        Assert.StartsWith($"flf2a{hardblank} ", File.ReadLines(target).First());
+        Assert.DoesNotContain(TestSupport.GlyphLines(target), line => line.Contains(hardblank));
+    }
+
+    [Fact]
+    public void Encoders_EmitOnlyTheirDeclaredCharacters()
+    {
+        double[][] pixels = [[0, 0.2, 0.4, 0.6, 0.8, 1], [1, 0.8, 0.6, 0.4, 0.2, 1], [0, 1, 0, 1, 0, 1]];
+
+        var halfBlock = string.Concat(HalfBlockEncoder.Encode(pixels));
+        var shaded = string.Concat(BlockEncoder.Encode(pixels));
+
+        Assert.All(halfBlock, c => Assert.Contains(c, HalfBlockEncoder.GlyphCharacters + " "));
+        Assert.All(shaded, c => Assert.Contains(c, BlockEncoder.GlyphCharacters + " "));
+        Assert.Equal((HalfBlockEncoder.GlyphCharacters + " ").Order(), halfBlock.Distinct().Order());
+        Assert.Equal((BlockEncoder.GlyphCharacters + " ").Order(), shaded.Distinct().Order());
+    }
+
     [Fact]
     public void Version_PrintsCalVer()
     {
