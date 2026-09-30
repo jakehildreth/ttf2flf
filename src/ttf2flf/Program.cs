@@ -87,6 +87,12 @@ public static class Program
             : _ => { };
 
         var converter = new Converter(options, output, error, verbose, rasterizer ?? GlyphRasterizer.Default);
+        if (FindOutputCollision(options.InputPaths, converter) is { } collision)
+        {
+            error.WriteLine(collision);
+            return 1;
+        }
+
         var anyFailed = false;
         foreach (var inputPath in options.InputPaths)
         {
@@ -97,6 +103,41 @@ public static class Program
         }
 
         return anyFailed ? 1 : 0;
+    }
+
+    /// <summary>
+    /// Resolves every input's destination before any conversion and reports the first
+    /// pair that would write the same file (e.g. a/same.ttf and b/same.ttf into one
+    /// directory). Paths compare case-insensitively on Windows and macOS, whose default
+    /// file systems are case-insensitive. Inputs whose path is invalid are skipped here;
+    /// ConvertOne reports them.
+    /// </summary>
+    private static string? FindOutputCollision(IReadOnlyList<string> inputPaths, Converter converter)
+    {
+        var comparer = OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+        var destinations = new Dictionary<string, string>(comparer);
+        foreach (var inputPath in inputPaths)
+        {
+            string destination;
+            try
+            {
+                destination = Path.GetFullPath(converter.ResolveOutputFile(Path.GetFullPath(inputPath)));
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                continue;
+            }
+
+            if (destinations.TryGetValue(destination, out var firstInput))
+            {
+                return $"error: inputs '{firstInput}' and '{inputPath}' would both write '{destination}'; " +
+                       "rename one input or convert them separately";
+            }
+
+            destinations[destination] = inputPath;
+        }
+
+        return null;
     }
 
     private sealed class Converter(
@@ -208,7 +249,7 @@ public static class Program
             }
         }
 
-        private string ResolveOutputFile(string resolvedPath)
+        public string ResolveOutputFile(string resolvedPath)
         {
             if (options.OutputPath is null)
             {
