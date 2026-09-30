@@ -3,8 +3,8 @@ using System.Text;
 namespace ttf2flf;
 
 /// <summary>
-/// Port of Private/New-FLFHeader.ps1 + New-FLFComment.ps1 + Format-FLFCharacter.ps1 and
-/// the character-ordering/write logic of Public/ConvertTo-FLF.ps1.
+/// Writes the FLF file: header line, comment block, and the 102 required characters
+/// (ASCII 32-126 then German 196, 214, 220, 228, 246, 252, 223) with endmarks.
 /// </summary>
 public static class FlfWriter
 {

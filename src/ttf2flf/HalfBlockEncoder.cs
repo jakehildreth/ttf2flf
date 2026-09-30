@@ -3,7 +3,7 @@ using System.Text;
 namespace ttf2flf;
 
 /// <summary>
-/// Port of Private/ConvertTo-HalfBlockCharacters.ps1. Two pixel rows become one terminal
+/// Encodes pixels as half-block characters (▀▄█). Two pixel rows become one terminal
 /// row (█ ▀ ▄ space). Odd pixel counts round UP: the dangling bottom pixel is off.
 /// </summary>
 public static class HalfBlockEncoder

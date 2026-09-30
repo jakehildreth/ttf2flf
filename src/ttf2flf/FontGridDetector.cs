@@ -4,7 +4,7 @@ using SixLabors.Fonts;
 
 namespace ttf2flf;
 
-/// <summary>Port of Private/Get-BitmapFontPixelHeight.ps1, plus render-size calibration.</summary>
+/// <summary>Detects the native pixel grid of a pixel-style font and the render size that reproduces it 1:1.</summary>
 public static class FontGridDetector
 {
     private static readonly int[] TestSizes = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40];
