@@ -211,10 +211,19 @@ function ConvertTo-FLF {
                         Write-Verbose "[+] Detected optimal width for ${PixelSize}h: ${detectedWidth}w"
                     }
                     
-                    # Pixel-perfect mode: render at exact pixel size
+                    # Pixel-perfect mode: render at exact pixel size. Use the FULL line
+                    # height (ascender+descender), not the point size, so descenders
+                    # (g, j, p, q, y) and deep punctuation fit the cell; the trim pass
+                    # reclaims empty top rows for fonts whose line height has headroom.
                     $fontSize = $PixelSize
-                    $outputHeight = [Math]::Ceiling($PixelSize / 2)  # 2 pixel rows per terminal row
-                    Write-Verbose "[+] Pixel-perfect mode: ${PixelSize}px font -> ${outputHeight} row FLF"
+                    # Metrics come from a sized font instance (family metrics can be 0).
+                    $probeFont = $fontFamily.CreateFont($fontSize)
+                    $pm = $probeFont.FontMetrics
+                    $mScale = $probeFont.Size / $pm.UnitsPerEm
+                    $lineHeightPx = [Math]::Ceiling(($pm.HorizontalMetrics.Ascender * $mScale) + [Math]::Abs($pm.HorizontalMetrics.Descender * $mScale))
+                    $renderHeight = [Math]::Max($PixelSize, $lineHeightPx)
+                    $outputHeight = [Math]::Ceiling($renderHeight / 2)  # 2 pixel rows per terminal row
+                    Write-Verbose "[+] Pixel-perfect mode: ${PixelSize}px font (line height ${renderHeight}px) -> ${outputHeight} row FLF"
                 } else {
                     # Standard mode: render at larger size for quality, then downsample
                     $fontSize = [Math]::Max(48, $Height * 8)
@@ -229,8 +238,8 @@ function ConvertTo-FLF {
                 $characterData = [System.Collections.Generic.Dictionary[int, PSCustomObject]]::new()
                 $maxWidth = 0
 
-                # Determine target height for rendering
-                $renderHeight = if ($PixelPerfect) { $PixelSize } else { $Height }
+                # renderHeight was set above (line height for pixel-perfect, Height otherwise)
+                if (-not $PixelPerfect) { $renderHeight = $Height }
                 Write-Verbose "[+] Rendering $($script:RequiredCharacters.Count) characters..."
 
                 foreach ($charCode in $script:RequiredCharacters) {
@@ -240,9 +249,9 @@ function ConvertTo-FLF {
                         if ($PixelPerfect) {
                             # Pixel-perfect: render at native size with detected width, get raw pixels
                             if ($detectedWidth -gt 0) {
-                                $bitmap = Get-GlyphBitmap -Font $font -FontCollection $fontCollection -Character $char -Height $PixelSize -Width $detectedWidth -PixelPerfect
+                                $bitmap = Get-GlyphBitmap -Font $font -FontCollection $fontCollection -Character $char -Height $renderHeight -Width $detectedWidth -PixelPerfect
                             } else {
-                                $bitmap = Get-GlyphBitmap -Font $font -FontCollection $fontCollection -Character $char -Height $PixelSize -PixelPerfect
+                                $bitmap = Get-GlyphBitmap -Font $font -FontCollection $fontCollection -Character $char -Height $renderHeight -PixelPerfect
                             }
                         } else {
                             $bitmap = Get-GlyphBitmap -Font $font -Character $char -Height $Height
@@ -355,7 +364,8 @@ function ConvertTo-FLF {
 
                         foreach ($charCode in $flfCharacters.Keys) {
                             $originalRows = $flfCharacters[$charCode]
-                            $trimmedRows = $originalRows[$firstContentRow..$lastContentRow]
+                            # @() forces array: single-row slices unroll to a scalar otherwise
+                            $trimmedRows = @($originalRows[$firstContentRow..$lastContentRow])
 
                             # Re-apply endmarks (last row needs @@, others need @)
                             for ($i = 0; $i -lt $trimmedRows.Count; $i++) {

@@ -320,3 +320,76 @@ Describe 'New-FLFComment' {
         }
     }
 }
+Describe 'Get-BitmapFontPixelHeight' {
+    BeforeAll {
+        $root = Split-Path -Path $PSScriptRoot -Parent
+        $privatePath = Join-Path -Path $root -ChildPath 'Private'
+        . (Join-Path -Path $privatePath -ChildPath 'Get-GlyphBitmap.ps1')
+        . (Join-Path -Path $privatePath -ChildPath 'Get-BitmapFontPixelHeight.ps1')
+        $sourceDir = Join-Path -Path $root -ChildPath 'Tests/TestData/SourceTTF'
+
+        $loadFont = {
+            param([string]$FileName)
+            $path = Join-Path -Path $sourceDir -ChildPath $FileName
+            $fc = [SixLabors.Fonts.FontCollection]::new()
+            $fc.Add($path)
+        }
+    }
+
+    # Height is the detected native grid; we render 1:1 at that size because the
+    # rasterizer reproduces the pixel grid faithfully only at native size.
+    Context 'When auto-detecting the native grid' {
+        It 'PressStart2P (native 8) should detect 8' {
+            $ff = & $loadFont 'PressStart2P.ttf'
+            $result = Get-BitmapFontPixelHeight -FontFamily $ff
+            $result.Height | Should -Be 8
+        }
+
+        It 'Jacquard12 (native 12) should detect 12' {
+            $ff = & $loadFont 'Jacquard12-Regular.ttf'
+            $result = Get-BitmapFontPixelHeight -FontFamily $ff
+            $result.Height | Should -Be 12
+        }
+
+        It 'Jacquard24 (native 24) should detect 24' {
+            $ff = & $loadFont 'Jacquard24-Regular.ttf'
+            $result = Get-BitmapFontPixelHeight -FontFamily $ff
+            $result.Height | Should -Be 24
+        }
+
+        It '04B_08 (native 8) should detect 8' {
+            $ff = & $loadFont '04B_08__.TTF'
+            $result = Get-BitmapFontPixelHeight -FontFamily $ff
+            $result.Height | Should -Be 8
+        }
+
+        It 'Silkscreen (native 8) should detect 8' {
+            $ff = & $loadFont 'Silkscreen.ttf'
+            $result = Get-BitmapFontPixelHeight -FontFamily $ff
+            $result.Height | Should -Be 8
+        }
+
+        It 'Should return a positive width alongside the height' {
+            $ff = & $loadFont 'PressStart2P.ttf'
+            $result = Get-BitmapFontPixelHeight -FontFamily $ff
+            $result.Width | Should -BeGreaterThan 0
+        }
+    }
+
+    Context 'When Height is specified, only width is detected' {
+        It 'Should echo back the given height and compute a width' {
+            $ff = & $loadFont 'PressStart2P.ttf'
+            $result = Get-BitmapFontPixelHeight -FontFamily $ff -Height 20
+            $result.Height | Should -Be 20
+            $result.Width | Should -BeGreaterThan 0
+        }
+    }
+
+    Context 'When UnitsPerPixel is specified, height derives from metrics' {
+        It 'Should compute grid as UnitsPerEm / UnitsPerPixel' {
+            $ff = & $loadFont 'PressStart2P.ttf'   # UnitsPerEm = 1000 -> grid 8
+            $result = Get-BitmapFontPixelHeight -FontFamily $ff -UnitsPerPixel 125
+            $result.Height | Should -Be 8
+        }
+    }
+}

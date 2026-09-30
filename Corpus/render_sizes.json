@@ -1,0 +1,277 @@
+{
+ "Absolute 10.ttf": {
+  "grid": 10,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Ark 6.ttf": {
+  "grid": 6,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Awesome 9.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Bacteria 12.ttf": {
+  "grid": 12,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Brief 9.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Buzzer 11.ttf": {
+  "grid": 11,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Candy 10.ttf": {
+  "grid": 10,
+  "renderSize": 17,
+  "pct": "override-verified"
+ },
+ "Compass 9.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Corset 8.ttf": {
+  "grid": 8,
+  "renderSize": 16,
+  "pct": "fallback-unverified"
+ },
+ "Curse 12.ttf": {
+  "grid": 12,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Dust 7 Clean.ttf": {
+  "grid": 7,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Dust 7.ttf": {
+  "grid": 7,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Empire 7.ttf": {
+  "grid": 7,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Fear 11.ttf": {
+  "grid": 11,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Futile 14.ttf": {
+  "grid": 14,
+  "renderSize": 32,
+  "pct": 100.0
+ },
+ "Gecko 16 Turkish.ttf": {
+  "grid": 16,
+  "renderSize": 33,
+  "pct": 100.0
+ },
+ "Gecko 16.ttf": {
+  "grid": 16,
+  "renderSize": 33,
+  "pct": 100.0
+ },
+ "Holotype 9.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Hungry 7.ttf": {
+  "grid": 7,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Ignore 17.ttf": {
+  "grid": 17,
+  "renderSize": 32,
+  "pct": 100.0
+ },
+ "Jewel 6 Turkish.ttf": {
+  "grid": 6,
+  "renderSize": 17,
+  "pct": 100.0
+ },
+ "Jewel 6.ttf": {
+  "grid": 6,
+  "renderSize": 17,
+  "pct": 100.0
+ },
+ "Kobold 7.ttf": {
+  "grid": 7,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Lookout 7.ttf": {
+  "grid": 7,
+  "renderSize": 16,
+  "pct": "fallback-unverified"
+ },
+ "Loser 7.ttf": {
+  "grid": 7,
+  "renderSize": 17,
+  "pct": "override-verified"
+ },
+ "Manticore 14.ttf": {
+  "grid": 14,
+  "renderSize": 13,
+  "pct": "fallback-unverified"
+ },
+ "Mask 17.ttf": {
+  "grid": 17,
+  "renderSize": 32,
+  "pct": 100.0
+ },
+ "Match 7.ttf": {
+  "grid": 7,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Memo 9.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "More 15.ttf": {
+  "grid": 15,
+  "renderSize": 32,
+  "pct": 100.0
+ },
+ "Nocive 15.ttf": {
+  "grid": 15,
+  "renderSize": 16,
+  "pct": "fallback-unverified"
+ },
+ "Nope 8 Bold.ttf": {
+  "grid": 8,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Nope 8.ttf": {
+  "grid": 8,
+  "renderSize": 17,
+  "pct": "override-verified"
+ },
+ "Outflank 9.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Passage 7.ttf": {
+  "grid": 7,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Quit 13.ttf": {
+  "grid": 13,
+  "renderSize": 16,
+  "pct": "fallback-unverified"
+ },
+ "Rude 11.ttf": {
+  "grid": 11,
+  "renderSize": 17,
+  "pct": "override-verified"
+ },
+ "Saga 8.ttf": {
+  "grid": 8,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Salty 9.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Sins 7.ttf": {
+  "grid": 7,
+  "renderSize": 17,
+  "pct": 100.0
+ },
+ "Smart 9 Turkish.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Smart 9.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Tape 14.ttf": {
+  "grid": 14,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Teatime 7.ttf": {
+  "grid": 7,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Torch 6.ttf": {
+  "grid": 6,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Troll 12.ttf": {
+  "grid": 12,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Unfair 8.ttf": {
+  "grid": 8,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Urban 20.ttf": {
+  "grid": 20,
+  "renderSize": 32,
+  "pct": 100.0
+ },
+ "Vest 9.ttf": {
+  "grid": 9,
+  "renderSize": 17,
+  "pct": "fallback-unverified"
+ },
+ "Voice 9 Turkish.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Voice 9.ttf": {
+  "grid": 9,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Winds 7.ttf": {
+  "grid": 7,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Xerxes 10.ttf": {
+  "grid": 10,
+  "renderSize": 16,
+  "pct": "fallback-unverified"
+ },
+ "Yesterday 10.ttf": {
+  "grid": 10,
+  "renderSize": 16,
+  "pct": 100.0
+ },
+ "Ziplock 13.ttf": {
+  "grid": 13,
+  "renderSize": 16,
+  "pct": "fallback-unverified"
+ }
+}
