@@ -94,10 +94,17 @@ flf2a$ Height Baseline MaxLength OldLayout CommentLines PrintDirection FullLayou
 For bitmap/pixel fonts, auto-detect the native pixel height and use half-block characters where each terminal row represents 2 pixel rows.
 
 ### Pixel Height Auto-Detection
-- Test all 102 required FIGlet characters at various font sizes
-- Find the tallest character (considering ascenders, descenders, and diacritics)
-- Use that maximum height as the pixel height
-- Convert to terminal rows: pixel_height / 2 (rounded up)
+Pixel-style fonts are outline fonts mimicking pixels (no embedded bitmap strike), so
+detection uses geometry, not strike tables:
+1. **Name hint** — a number ≥ 5 in the family name is the design grid (Jacquard12 → 12).
+2. **Stroke-width alignment** — binarize a probe glyph across sizes; the fraction of
+   stroke run-lengths that are integer multiples of the min run stays ~100% at the native
+   grid and its integer multiples, and breaks off-grid. Smallest aligned fundamental wins.
+3. **Fallback** — thin-stroke fonts give no signal; default 8.
+Recommended render size = smallest integer multiple of the grid ≥ 16px (supersampling
+thickens strokes, repairs anti-aliased edges). `Get-BitmapFontPixelHeight` returns
+`{ Height = recommended; Width }`; `-NoSupersample` returns the bare grid.
+Output terminal rows: render_height / 2 (rounded up).
 
 ### Half-Block Characters
 - `█` (U+2588) - Both pixels on
@@ -111,10 +118,10 @@ For bitmap/pixel fonts, auto-detect the native pixel height and use half-block c
 - Crisp, pixel-perfect rendering
 - No anti-aliasing artifacts
 
-### Detection Strategy
-- Check if UnitsPerEm suggests pixel grid (e.g., 8, 16, 32)
-- Render at native size where 1 font unit = 1 pixel
-- Threshold pixels as on/off (no grayscale)
+### Detection Notes
+- UnitsPerEm is NOT a reliable grid proxy (Jewel=1024 divides by both 16 and 32).
+- Outline-mimic fonts have gray edge pixels at native size; a fixed cleanliness
+  threshold both admits crushed sizes and misses integer-multiple supersamples.
 
 ## SixLabors v3 API Notes
 
