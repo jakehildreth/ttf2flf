@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/flfview/flfview.csproj" />
+    <Project Path="src/ttf2flf/ttf2flf.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ttf2flf.Tests/ttf2flf.Tests.csproj" />
+  </Folder>
+</Solution>

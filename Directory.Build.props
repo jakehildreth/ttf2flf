@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    Single authoritative version for every project in the repository.
+    CalVer yyyy.M.dHHmm. Bump at release, or override per build:
+      dotnet build -p:CalVer=2026.10.11200
+    The value drives InformationalVersion (read at runtime for provenance and
+    the version flag). Assembly and file version parts are limited to 65535,
+    so they use the same value split as yyyy.M.d.HHmm.
+  -->
+  <PropertyGroup>
+    <CalVer Condition="'$(CalVer)' == ''">2026.9.292159</CalVer>
+    <Version>$(CalVer)</Version>
+    <InformationalVersion>$(CalVer)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <AssemblyVersion>$([System.Text.RegularExpressions.Regex]::Replace('$(CalVer)', '^(\d{4})\.(\d{1,2})\.(\d{1,2})(\d{4})$', '$1.$2.$3.$4'))</AssemblyVersion>
+    <FileVersion>$(AssemblyVersion)</FileVersion>
+  </PropertyGroup>
+
+  <Target Name="ValidateCalVer" BeforeTargets="BeforeBuild">
+    <Error
+      Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(CalVer)', '^\d{4}\.(?:[1-9]|1[0-2])\.(?:[1-9]|[12]\d|3[01])(?:[01]\d|2[0-3])[0-5]\d$'))"
+      Text="CalVer '$(CalVer)' must use the format yyyy.M.dHHmm (for example 2026.9.292159)." />
+  </Target>
+
+</Project>
