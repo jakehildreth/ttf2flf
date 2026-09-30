@@ -5,9 +5,8 @@ namespace ttf2flf;
 /// <summary>Converts pixel brightness to anti-aliased block characters (░▒▓█).</summary>
 public static class BlockEncoder
 {
-    public static string[] Encode(double[][] pixels, char hardblank = '$')
+    public static string[] Encode(double[][] pixels)
     {
-        _ = hardblank; // Reserved for smushing modes; kept for port parity.
         var rows = new List<string>(pixels.Length);
 
         foreach (var pixelRow in pixels)

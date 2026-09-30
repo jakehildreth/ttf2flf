@@ -160,10 +160,36 @@ public static class FontGridDetector
         }
     }
 
+    /// <summary>Smallest design grid accepted from a font-name number.</summary>
+    public const int MinNameGrid = 5;
+
+    /// <summary>Largest design grid accepted from a font-name number (matches the --height limit).</summary>
+    public const int MaxNameGrid = 64;
+
+    /// <summary>
+    /// Returns the design grid hinted by a font family name: the last numeric token in
+    /// <see cref="MinNameGrid"/>..<see cref="MaxNameGrid"/>. Tokens outside that range
+    /// (model or version numbers such as "3270" or "256") are ignored. Returns null
+    /// when no token qualifies.
+    /// </summary>
+    public static int? GridHintFromName(string fontName)
+    {
+        int? hint = null;
+        foreach (Match match in Regex.Matches(fontName, @"\d+"))
+        {
+            if (int.TryParse(match.Value, out var value) && value is >= MinNameGrid and <= MaxNameGrid)
+            {
+                hint = value;
+            }
+        }
+
+        return hint;
+    }
+
     /// <summary>
     /// Detects the native design grid. Priority: explicit height (width-only detection),
-    /// then UnitsPerPixel, then name hint (first number ≥ 5), then stroke-width alignment,
-    /// then default 8.
+    /// then UnitsPerPixel, then name hint (<see cref="GridHintFromName"/>), then
+    /// stroke-width alignment, then default 8.
     /// </summary>
     public static GridSize Detect(
         FontFamily fontFamily, int explicitHeight = 0, int unitsPerPixel = 0,
@@ -191,17 +217,12 @@ public static class FontGridDetector
 
         var fontName = fontFamily.Name;
 
-        // 1. Name hint: a number >= 5 in the family name is the design grid.
-        var match = Regex.Match(fontName, @"(\d+)");
-        if (match.Success)
+        // 1. Name hint: the last plausible grid number in the family name.
+        if (GridHintFromName(fontName) is { } hint)
         {
-            var hint = int.Parse(match.Groups[1].Value);
-            if (hint >= 5)
-            {
-                var width = GetWidth(fontFamily.CreateFont(hint));
-                verbose?.Invoke($"[+] Detected grid {hint} from font name (width {width})");
-                return new GridSize(hint, width);
-            }
+            var width = GetWidth(fontFamily.CreateFont(hint));
+            verbose?.Invoke($"[+] Detected grid {hint} from font name (width {width})");
+            return new GridSize(hint, width);
         }
 
         // 2. Stroke-width alignment: find the fundamental period for thick-stroke fonts.

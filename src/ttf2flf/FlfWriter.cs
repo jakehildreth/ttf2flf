@@ -5,6 +5,9 @@ namespace ttf2flf;
 /// <summary>
 /// Writes the FLF file: header line, comment block, and the 102 required characters
 /// (ASCII 32-126 then German 196, 214, 220, 228, 246, 252, 223) with endmarks.
+/// Output always declares FIGlet FullWidth layout: glyph geometry (including the
+/// 1px right spacer) is built for side-by-side placement, and FIGlet smushing works
+/// on bytes, which would corrupt the multibyte block characters.
 /// </summary>
 public static class FlfWriter
 {
@@ -15,21 +18,17 @@ public static class FlfWriter
     public static readonly int[] RequiredCharacters =
         Enumerable.Range(32, 95).Concat([196, 214, 220, 228, 246, 252, 223]).ToArray();
 
-    private static readonly Dictionary<LayoutMode, (int OldLayout, int FullLayout)> LayoutModes = new()
-    {
-        [LayoutMode.FullWidth] = (-1, 0),
-        [LayoutMode.Kerned] = (0, 64),
-        [LayoutMode.Smushed] = (63, 16191),
-    };
+    /// <summary>FIGlet FullWidth: old layout -1, full layout 0 (no kerning, no smushing).</summary>
+    public const int OldLayoutFullWidth = -1;
+    public const int FullLayoutFullWidth = 0;
 
     /// <summary>flf2a$ Height Baseline MaxLen OldLayout CommentLines PrintDir FullLayout CodetagCount</summary>
     public static string Header(
-        char hardblank, int height, int baseline, int maxLength, LayoutMode layout,
+        char hardblank, int height, int baseline, int maxLength,
         int commentLines, int printDirection = 0, int codetagCount = 0)
     {
-        var (oldLayout, fullLayout) = LayoutModes[layout];
-        return $"{Signature}{hardblank} {height} {baseline} {maxLength} {oldLayout} " +
-               $"{commentLines} {printDirection} {fullLayout} {codetagCount}";
+        return $"{Signature}{hardblank} {height} {baseline} {maxLength} {OldLayoutFullWidth} " +
+               $"{commentLines} {printDirection} {FullLayoutFullWidth} {codetagCount}";
     }
 
     /// <summary>Comment lines after the header (font name, source, generator).</summary>
@@ -77,29 +76,26 @@ public static class FlfWriter
         IReadOnlyDictionary<int, string[]> flfCharacters,
         int height,
         char hardblank,
-        LayoutMode layout,
         string fontName,
         string sourcePath,
         string moduleVersion)
     {
         var baseline = height - 1;
 
-        // MaxLength = longest row including endmarks + 2 (PS parity: rows carry endmarks).
-        var actualMaxLength = 0;
+        // MaxLength = longest serialized glyph line (endmarks included), in UTF-8 bytes:
+        // byte-oriented readers such as FIGlet size their line buffers from it, and the
+        // block characters are 3 bytes each.
+        var maxLength = 0;
         foreach (var rows in flfCharacters.Values)
         {
             foreach (var row in rows)
             {
-                if (row.Length > actualMaxLength)
-                {
-                    actualMaxLength = row.Length;
-                }
+                maxLength = Math.Max(maxLength, Utf8NoBom.GetByteCount(row));
             }
         }
 
         var comments = Comments(fontName, sourcePath, moduleVersion);
-        var header = Header(
-            hardblank, height, baseline, actualMaxLength + 2, layout, comments.Length);
+        var header = Header(hardblank, height, baseline, maxLength, comments.Length);
 
         var content = new StringBuilder();
 
@@ -122,8 +118,10 @@ public static class FlfWriter
         }
 
         // UTF-8, no BOM. LF endings by construction.
-        File.WriteAllText(outputFile, content.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        File.WriteAllText(outputFile, content.ToString(), Utf8NoBom);
 
         return header;
     }
+
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 }

@@ -1,15 +1,11 @@
+using System.Reflection;
 using flfview;
 
-// (dir, tier): the curated corpus is PNG-verified; Font Book additions are clean
-// except the decorative/stroked ones flagged approximate in FlfFont.ApproximateFonts.
-(string Dir, string Tier)[] defaultFontDirs =
-[
-    ("/Users/jhildreth/Repos/ttf2flf/Corpus/OutputFLF", "verified"),
-    ("/Users/jhildreth/Repos/ttf2flf/Corpus/FontBookFLF", "clean"),
-];
-
 // ---------------------------------------------------------------- args
-(string Dir, string Tier)[] fontDirs = [.. defaultFontDirs];
+// Defaults: the bundled corpus copied beside the executable. The curated corpus is
+// PNG-verified; Font Book additions are clean except the decorative/stroked ones
+// flagged approximate in FlfFont.ApproximateFonts.
+IReadOnlyList<(string Dir, string Tier)> fontDirs = FontLibrary.DefaultDirectories(AppContext.BaseDirectory);
 string? renderWord = null;
 string? fontName = null;
 bool renderAll = false;
@@ -37,6 +33,11 @@ for (var i = 0; i < args.Length; i++)
         case "--help" or "-h":
             PrintUsage();
             return 0;
+        case "--version":
+            Console.WriteLine(
+                "flfview " + (typeof(FlfFont).Assembly
+                    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown"));
+            return 0;
         default:
             Console.Error.WriteLine($"Unknown argument: {args[i]}");
             PrintUsage();
@@ -52,10 +53,14 @@ static void PrintUsage() => Console.WriteLine("""
       flfview --render "<word>" --font "<name>"       one-shot: render word in one font
       flfview --render "<word>" --all                 one-shot: render word in every font
       flfview --fonts                                 list font names and exit
+      flfview --version                               show the version
+
+    Fonts: bundled fonts/ beside the executable by default; --dir <path> overrides.
+    Only FullWidth .flf fonts are supported; kerned or smushed fonts are skipped.
 
     Interactive keys:
       printable chars   append to the word
-      Backspace         delete last char
+      Backspace         delete last character
       Enter             re-render
       Up/Down, PgUp/PgDn, Tab/Shift+Tab
                         move active font selection (1 / 10 rows) and re-render
@@ -65,40 +70,12 @@ static void PrintUsage() => Console.WriteLine("""
     """);
 
 // ---------------------------------------------------------------- load fonts
-var fonts = new List<FlfFont>();
-var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-foreach (var (dir, tier) in fontDirs)
-{
-    if (!Directory.Exists(dir))
-    {
-        Console.Error.WriteLine($"warning: font directory not found: {dir}");
-        continue;
-    }
-
-    foreach (var path in Directory.EnumerateFiles(dir, "*.flf").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
-    {
-        if (!seenNames.Add(Path.GetFileNameWithoutExtension(path)))
-            continue; // dedupe by font name across dirs
-        try
-        {
-            var font = FlfFont.Load(path);
-            // h/p variants of verified families convert cleanly at the calibrated render
-            // size (16) and Jake confirmed they look right -> verified.
-            font.Tier = FlfFont.ApproximateFonts.Contains(font.Name) ? "approximate"
-                : System.Text.RegularExpressions.Regex.IsMatch(font.Name, @"\d[hp]$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ? "verified"
-                : tier;
-            fonts.Add(font);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"warning: skipping {Path.GetFileName(path)}: {ex.Message}");
-        }
-    }
-}
+var fonts = FontLibrary.Load(fontDirs, Console.Error);
 
 if (fonts.Count == 0)
 {
-        Console.Error.WriteLine($"No usable .flf fonts found in {string.Join(", ", fontDirs)}");
+    Console.Error.WriteLine(
+        $"No usable .flf fonts found in {string.Join(", ", fontDirs.Select(d => d.Dir))}");
     return 1;
 }
 
@@ -145,7 +122,7 @@ return RunInteractive(fonts);
 
 static int RunInteractive(IReadOnlyList<FlfFont> allFonts)
 {
-    var word = "";
+    var input = new WordBuffer();
     var fontIndex = 0;
     var tierFilter = "all"; // all | verified | clean | approximate
     var status = "Type a word, Enter to render. /help for commands. Esc quits.";
@@ -160,6 +137,7 @@ static int RunInteractive(IReadOnlyList<FlfFont> allFonts)
 
     while (true)
     {
+        var word = input.Text;
         DrawScreen(fonts, ref fontIndex, word, status, tierFilter);
         status = "";
 
@@ -171,8 +149,7 @@ static int RunInteractive(IReadOnlyList<FlfFont> allFonts)
         switch (key.Key)
         {
             case ConsoleKey.Backspace:
-                if (word.Length > 0)
-                    word = word[..^1];
+                input.Backspace();
                 continue;
 
             case ConsoleKey.Enter:
@@ -195,11 +172,11 @@ static int RunInteractive(IReadOnlyList<FlfFont> allFonts)
                         {
                             status = "Usage: /tier all|verified|clean|approximate";
                         }
-                        word = "";
+                        input.Text = "";
                     }
                     else
                     {
-                        word = RunCommand(word, fonts, ref fontIndex, ref status);
+                        input.Text = RunCommand(word, fonts, ref fontIndex, ref status);
                     }
                 }
                 continue;
@@ -224,11 +201,7 @@ static int RunInteractive(IReadOnlyList<FlfFont> allFonts)
                 continue;
         }
 
-        if (!char.IsControl(key.KeyChar))
-        {
-            word += key.KeyChar;
-            continue;
-        }
+        input.Append(key.KeyChar);
     }
 
     Console.Clear();

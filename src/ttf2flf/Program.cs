@@ -1,26 +1,96 @@
+using System.Reflection;
 using SixLabors.Fonts;
 
 namespace ttf2flf;
 
+/// <summary>Glyph rasterization used by the converter. Tests substitute failing implementations.</summary>
+public interface IGlyphRasterizer
+{
+    GlyphRenderer.MeasuredGlyph MeasurePixelPerfect(Font font, char character);
+
+    Bitmap RenderAntiAliased(Font font, char character, int height, int maxWidth);
+}
+
+/// <summary>The production rasterizer: forwards to <see cref="GlyphRenderer"/>.</summary>
+public sealed class GlyphRasterizer : IGlyphRasterizer
+{
+    public static readonly GlyphRasterizer Default = new();
+
+    public GlyphRenderer.MeasuredGlyph MeasurePixelPerfect(Font font, char character) =>
+        GlyphRenderer.MeasurePixelPerfect(font, character);
+
+    public Bitmap RenderAntiAliased(Font font, char character, int height, int maxWidth) =>
+        GlyphRenderer.RenderAntiAliased(font, character, height, maxWidth);
+}
+
+/// <summary>
+/// Decides when per-glyph render failures make a conversion unusable. Isolated failures
+/// become blank glyphs with a warning; the conversion fails when any core glyph
+/// (A-Z, a-z, 0-9) fails or when more than <see cref="MaxFailedFraction"/> of the
+/// required glyphs fail.
+/// </summary>
+public static class GlyphFailurePolicy
+{
+    public const double MaxFailedFraction = 0.10;
+
+    public static bool IsCore(int charCode) =>
+        charCode is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or (>= '0' and <= '9');
+
+    /// <summary>Returns an error message when the failures are material; null otherwise.</summary>
+    public static string? Evaluate(IReadOnlyCollection<int> failedCharCodes, int totalGlyphs)
+    {
+        var failedCore = failedCharCodes.Where(IsCore).ToList();
+        if (failedCore.Count > 0)
+        {
+            var list = string.Join(", ", failedCore.Select(c => $"'{(char)c}'"));
+            return $"{failedCore.Count} core glyph(s) failed to render ({list})";
+        }
+
+        if (failedCharCodes.Count > totalGlyphs * MaxFailedFraction)
+        {
+            return $"{failedCharCodes.Count} of {totalGlyphs} glyphs failed to render " +
+                   $"(limit {MaxFailedFraction:P0})";
+        }
+
+        return null;
+    }
+}
+
 public static class Program
 {
-    private const string Version = "1.0.0";
+    /// <summary>CalVer (yyyy.M.dHHmm) from assembly metadata; set in Directory.Build.props.</summary>
+    public static string Version { get; } =
+        typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? "unknown";
 
-    public static int Main(string[] args)
+    public static int Main(string[] args) => Run(args, Console.Out, Console.Error);
+
+    /// <summary>Runs the CLI against explicit output streams and an optional rasterizer.</summary>
+    public static int Run(
+        string[] args, TextWriter output, TextWriter error, IGlyphRasterizer? rasterizer = null)
     {
-        if (!CliParser.TryParse(args, out var options, out var parseExit))
+        if (!CliParser.TryParse(args, output, error, out var options, out var parseExit))
         {
             return parseExit;
         }
 
+        if (options.InputPaths.Count > 1 && options.OutputPath is { } outputPath
+            && (outputPath.EndsWith(".flf", StringComparison.OrdinalIgnoreCase) || File.Exists(outputPath)))
+        {
+            error.WriteLine(
+                $"error: multiple input fonts require --output to be a directory, got file path '{outputPath}'");
+            return 1;
+        }
+
         Action<string> verbose = options.Verbose
-            ? msg => Console.Error.WriteLine(msg)
+            ? error.WriteLine
             : _ => { };
 
+        var converter = new Converter(options, output, error, verbose, rasterizer ?? GlyphRasterizer.Default);
         var anyFailed = false;
         foreach (var inputPath in options.InputPaths)
         {
-            if (!ConvertOne(inputPath, options, verbose))
+            if (!converter.ConvertOne(inputPath))
             {
                 anyFailed = true;
             }
@@ -29,234 +99,260 @@ public static class Program
         return anyFailed ? 1 : 0;
     }
 
-    private static bool ConvertOne(string inputPath, CliOptions options, Action<string> verbose)
+    private sealed class Converter(
+        CliOptions options,
+        TextWriter output,
+        TextWriter error,
+        Action<string> verbose,
+        IGlyphRasterizer rasterizer)
     {
-        string resolvedPath;
-        try
+        public bool ConvertOne(string inputPath)
         {
-            resolvedPath = Path.GetFullPath(inputPath);
-            if (!File.Exists(resolvedPath))
+            string resolvedPath;
+            try
             {
-                Console.Error.WriteLine($"error: file not found: {inputPath}");
+                resolvedPath = Path.GetFullPath(inputPath);
+                if (!File.Exists(resolvedPath))
+                {
+                    error.WriteLine($"error: file not found: {inputPath}");
+                    return false;
+                }
+
+                if (!resolvedPath.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase)
+                    && !resolvedPath.EndsWith(".otf", StringComparison.OrdinalIgnoreCase))
+                {
+                    error.WriteLine($"error: file must be a TrueType font (.ttf or .otf): {inputPath}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                error.WriteLine($"error: invalid path '{inputPath}': {ex.Message}");
                 return false;
             }
 
-            if (!resolvedPath.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase)
-                && !resolvedPath.EndsWith(".otf", StringComparison.OrdinalIgnoreCase))
+            var outputFile = ResolveOutputFile(resolvedPath);
+
+            try
             {
-                Console.Error.WriteLine($"error: file must be a TrueType font (.ttf or .otf): {inputPath}");
+                verbose($"[+] Processing: {resolvedPath}");
+
+                var fontCollection = new FontCollection();
+                var fontFamily = fontCollection.Add(resolvedPath);
+
+                var (isCompatible, warnings, fontName) =
+                    FontCompatibility.Check(fontFamily, resolvedPath);
+                foreach (var warning in warnings)
+                {
+                    error.WriteLine(warning);
+                }
+
+                if (!isCompatible)
+                {
+                    error.WriteLine("[!] Font may not produce usable output. Continuing anyway...");
+                }
+
+                var pixelPerfect = !options.AntiAliased;
+                var failed = new List<int>();
+                var (outputHeight, characterData) = pixelPerfect
+                    ? RenderPixelPerfect(fontFamily, resolvedPath, failed)
+                    : RenderAntiAliased(fontFamily, failed);
+
+                if (GlyphFailurePolicy.Evaluate(failed, FlfWriter.RequiredCharacters.Length) is { } failure)
+                {
+                    error.WriteLine($"error: conversion failed for '{inputPath}': {failure}; no output written");
+                    return false;
+                }
+
+                var formatWidth = options.Monospace
+                    ? characterData.Values.Max(b => b.Width)
+                    : 0;
+
+                // Encode to FLF rows.
+                verbose("[+] Converting to FLF format...");
+                var flfCharacters = new Dictionary<int, string[]>();
+                foreach (var charCode in FlfWriter.RequiredCharacters)
+                {
+                    var bitmap = characterData[charCode];
+                    var asciiRows = pixelPerfect
+                        ? HalfBlockEncoder.Encode(bitmap.Pixels)
+                        : BlockEncoder.Encode(bitmap.Pixels);
+                    flfCharacters[charCode] =
+                        FlfWriter.FormatCharacter(asciiRows, formatWidth);
+                }
+
+                var outputDirectory = Path.GetDirectoryName(outputFile);
+                if (!string.IsNullOrEmpty(outputDirectory))
+                {
+                    Directory.CreateDirectory(outputDirectory);
+                }
+
+                var header = FlfWriter.WriteFile(
+                    outputFile,
+                    flfCharacters,
+                    outputHeight,
+                    options.Hardblank,
+                    fontName,
+                    resolvedPath,
+                    Version);
+
+                verbose($"[+] Header: {header}");
+                output.WriteLine(outputFile);
+                verbose("[+] Conversion complete");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error.WriteLine($"error: conversion failed for '{inputPath}': {ex.Message}");
                 return false;
             }
         }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"error: invalid path '{inputPath}': {ex.Message}");
-            return false;
-        }
 
-        string outputFile;
-        if (options.OutputPath is null)
+        private string ResolveOutputFile(string resolvedPath)
         {
-            outputFile = Path.ChangeExtension(resolvedPath, ".flf");
-        }
-        else if (Directory.Exists(options.OutputPath)
-                 || options.OutputPath.EndsWith(Path.DirectorySeparatorChar)
-                 || options.OutputPath.EndsWith(Path.AltDirectorySeparatorChar))
-        {
-            var baseName = Path.GetFileNameWithoutExtension(resolvedPath);
-            outputFile = Path.Combine(options.OutputPath, $"{baseName}.flf");
-        }
-        else if (options.InputPaths.Count > 1
-                 && !options.OutputPath.EndsWith(".flf", StringComparison.OrdinalIgnoreCase))
-        {
-            // Multi-input with a non-.flf output: treat as a directory-to-be.
-            var baseName = Path.GetFileNameWithoutExtension(resolvedPath);
-            outputFile = Path.Combine(options.OutputPath, $"{baseName}.flf");
-        }
-        else
-        {
-            outputFile = options.OutputPath;
-        }
-
-        try
-        {
-            verbose($"[+] Processing: {resolvedPath}");
-
-            var fontCollection = new FontCollection();
-            var fontFamily = fontCollection.Add(resolvedPath);
-
-            var (isCompatible, warnings, fontName) =
-                FontCompatibility.Check(fontFamily, resolvedPath);
-            foreach (var warning in warnings)
+            if (options.OutputPath is null)
             {
-                Console.Error.WriteLine(warning);
+                return Path.ChangeExtension(resolvedPath, ".flf");
             }
 
-            if (!isCompatible)
+            // A directory target: an existing directory, a trailing separator, or any
+            // path when converting several inputs (validated up front in Run).
+            if (Directory.Exists(options.OutputPath)
+                || options.OutputPath.EndsWith(Path.DirectorySeparatorChar)
+                || options.OutputPath.EndsWith(Path.AltDirectorySeparatorChar)
+                || options.InputPaths.Count > 1)
             {
-                Console.Error.WriteLine("[!] Font may not produce usable output. Continuing anyway...");
+                var baseName = Path.GetFileNameWithoutExtension(resolvedPath);
+                return Path.Combine(options.OutputPath, $"{baseName}.flf");
             }
 
-            var pixelPerfect = !options.AntiAliased;
-            int outputHeight;
-            Font font;
-            var characterData = new Dictionary<int, Bitmap>();
+            return options.OutputPath;
+        }
 
-            if (pixelPerfect)
-            {
-                var grid = FontGridDetector.Detect(
-                    fontFamily,
-                    explicitHeight: options.Height ?? 0,
-                    unitsPerPixel: options.UnitsPerPixel ?? 0,
-                    verbose: verbose);
-                var gridSize = grid.Height;
-                verbose($"[+] Design grid: {gridSize}px");
+        private (int OutputHeight, Dictionary<int, Bitmap> Characters) RenderPixelPerfect(
+            FontFamily fontFamily, string resolvedPath, List<int> failed)
+        {
+            var grid = FontGridDetector.Detect(
+                fontFamily,
+                explicitHeight: options.Height ?? 0,
+                unitsPerPixel: options.UnitsPerPixel ?? 0,
+                verbose: verbose);
+            var gridSize = grid.Height;
+            verbose($"[+] Design grid: {gridSize}px");
 
-                // Render at the calibrated/computed size (outline em >> design grid), NOT the
-                // grid. --render-size wins; else render_sizes.json; else scale+nudge.
-                var renderSize = options.RenderSize
-                    ?? FontGridDetector.DetectRenderSize(fontFamily, gridSize, resolvedPath, verbose);
-                verbose($"[+] Rendering at {renderSize}px (grid {gridSize})");
-                font = fontFamily.CreateFont(renderSize);
+            // Render at the calibrated/computed size (outline em >> design grid), NOT the
+            // grid. --render-size wins; else render_sizes.json; else scale+nudge.
+            var renderSize = options.RenderSize
+                ?? FontGridDetector.DetectRenderSize(fontFamily, gridSize, resolvedPath, verbose);
+            verbose($"[+] Rendering at {renderSize}px (grid {gridSize})");
+            var font = fontFamily.CreateFont(renderSize);
 
-                // Width for --monospace only: advance-based at the render size. Glyphs are
-                // measured at their own tight bbox width (proportional); forcing a uniform
-                // width here is what caused the spaced-apart output. detectedWidth is used
-                // solely as the monospace target width below.
-                var detectedWidth = FontGridDetector.GetWidth(font);
-                // Pass 1: measure each glyph's tight bbox (span + bottom edge) at the grid.
-                var measured = new Dictionary<int, GlyphRenderer.MeasuredGlyph>();
-                var maxSpan = 0;
-                var globalMaxBottom = int.MinValue;
-                verbose($"[+] Measuring {FlfWriter.RequiredCharacters.Length} characters...");
-                foreach (var charCode in FlfWriter.RequiredCharacters)
-                {
-                    var character = (char)charCode;
-                    try
-                    {
-                        var glyph = GlyphRenderer.MeasurePixelPerfect(
-                            font, character, width: 0);
-                        measured[charCode] = glyph;
-                        if (glyph.Span > maxSpan) maxSpan = glyph.Span;
-                        if (!glyph.IsEmpty && glyph.ContentBottomFromOrigin > globalMaxBottom)
-                        {
-                            globalMaxBottom = glyph.ContentBottomFromOrigin;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.Error.WriteLine(
-                            $"[!] Failed to render character {charCode} ({character}): {ex.Message}");
-                        measured[charCode] = new GlyphRenderer.MeasuredGlyph(
-                            [], 1, 0, 0, 1, true);
-                    }
-                }
+            // Width for --monospace only: advance-based at the render size. Glyphs are
+            // measured at their own tight bbox width (proportional).
+            var detectedWidth = FontGridDetector.GetWidth(font);
 
-                // Height = ceil(tallest glyph's vertical pixel span / 2). Odd spans round UP.
-                if (maxSpan < 1) maxSpan = 1;
-                outputHeight = (int)Math.Ceiling(maxSpan / 2.0);
-                var canvasPixels = outputHeight * 2;
-                verbose(
-                    $"[+] Tallest glyph span: {maxSpan}px -> {outputHeight} rows (canvas {canvasPixels}px)");
-
-                // Pass 2: bottom-align each glyph on the shared canvas (global max bottom ->
-                // last pixel row), preserving every glyph's internal gaps and true offsets.
-                // 1px right spacer per glyph: advance = own content width + 1, giving every
-                // letter a consistent 1px gap (matches figlet legibility). --monospace overrides.
-                var targetWidth = options.Monospace ? detectedWidth : 0;
-                foreach (var charCode in FlfWriter.RequiredCharacters)
-                {
-                    var bitmap = GlyphRenderer.PlaceOnCanvas(
-                        measured[charCode], canvasPixels, globalMaxBottom, targetWidth, rightSpacer: 1);
-                    characterData[charCode] = bitmap;
-                }
-            }
-            else
-            {
-                var height = options.Height ?? 8;
-                var fontSize = Math.Max(48, height * 8);
-                outputHeight = height;
-                font = fontFamily.CreateFont(fontSize);
-                verbose($"[+] Anti-aliased mode: render {fontSize}px -> {outputHeight} row FLF");
-
-                var maxWidth = 0;
-                verbose($"[+] Rendering {FlfWriter.RequiredCharacters.Length} characters...");
-                foreach (var charCode in FlfWriter.RequiredCharacters)
-                {
-                    var character = (char)charCode;
-                    try
-                    {
-                        var bitmap = GlyphRenderer.RenderAntiAliased(font, character, height);
-                        characterData[charCode] = bitmap;
-                        if (bitmap.Width > maxWidth) maxWidth = bitmap.Width;
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.Error.WriteLine(
-                            $"[!] Failed to render character {charCode} ({character}): {ex.Message}");
-                        characterData[charCode] = new Bitmap
-                        {
-                            Width = 1,
-                            Height = height,
-                            Pixels = Enumerable.Range(0, height)
-                                .Select(_ => new double[1])
-                                .ToArray(),
-                        };
-                    }
-                }
-
-                if (options.Monospace && maxWidth > 0)
-                {
-                    foreach (var charCode in FlfWriter.RequiredCharacters)
-                    {
-                        characterData[charCode] = GlyphRenderer.RenderAntiAliased(
-                            font, (char)charCode, height, maxWidth);
-                    }
-                }
-            }
-
-            var formatWidth = options.Monospace
-                ? characterData.Values.Max(b => b.Width)
-                : 0;
-
-            // Encode to FLF rows.
-            verbose("[+] Converting to FLF format...");
-            var flfCharacters = new Dictionary<int, string[]>();
+            // Pass 1: measure each glyph's tight bbox (span + bottom edge).
+            var measured = new Dictionary<int, GlyphRenderer.MeasuredGlyph>();
+            var maxSpan = 0;
+            var globalMaxBottom = int.MinValue;
+            verbose($"[+] Measuring {FlfWriter.RequiredCharacters.Length} characters...");
             foreach (var charCode in FlfWriter.RequiredCharacters)
             {
-                var bitmap = characterData[charCode];
-                var asciiRows = pixelPerfect
-                    ? HalfBlockEncoder.Encode(bitmap.Pixels)
-                    : BlockEncoder.Encode(bitmap.Pixels, options.Hardblank);
-                flfCharacters[charCode] =
-                    FlfWriter.FormatCharacter(asciiRows, formatWidth);
+                var character = (char)charCode;
+                try
+                {
+                    var glyph = rasterizer.MeasurePixelPerfect(font, character);
+                    measured[charCode] = glyph;
+                    if (glyph.Span > maxSpan) maxSpan = glyph.Span;
+                    if (!glyph.IsEmpty && glyph.ContentBottomFromOrigin > globalMaxBottom)
+                    {
+                        globalMaxBottom = glyph.ContentBottomFromOrigin;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ReportGlyphFailure(charCode, ex, failed);
+                    measured[charCode] = new GlyphRenderer.MeasuredGlyph([], 1, 0, 0, 1, true);
+                }
             }
 
-            var outputDirectory = Path.GetDirectoryName(outputFile);
-            if (!string.IsNullOrEmpty(outputDirectory))
+            // Height = ceil(tallest glyph's vertical pixel span / 2). Odd spans round UP.
+            if (maxSpan < 1) maxSpan = 1;
+            var outputHeight = (int)Math.Ceiling(maxSpan / 2.0);
+            var canvasPixels = outputHeight * 2;
+            verbose(
+                $"[+] Tallest glyph span: {maxSpan}px -> {outputHeight} rows (canvas {canvasPixels}px)");
+
+            // Pass 2: bottom-align each glyph on the shared canvas (global max bottom ->
+            // last pixel row), preserving every glyph's internal gaps and true offsets.
+            // 1px right spacer per glyph: advance = own content width + 1, giving every
+            // letter a consistent 1px gap under FullWidth layout. --monospace overrides.
+            var targetWidth = options.Monospace ? detectedWidth : 0;
+            var characters = new Dictionary<int, Bitmap>();
+            foreach (var charCode in FlfWriter.RequiredCharacters)
             {
-                Directory.CreateDirectory(outputDirectory);
+                characters[charCode] = GlyphRenderer.PlaceOnCanvas(
+                    measured[charCode], canvasPixels, globalMaxBottom, targetWidth, rightSpacer: 1);
             }
 
-            var header = FlfWriter.WriteFile(
-                outputFile,
-                flfCharacters,
-                outputHeight,
-                options.Hardblank,
-                options.Layout,
-                fontName,
-                resolvedPath,
-                Version);
-
-            verbose($"[+] Header: {header}");
-            Console.WriteLine(outputFile);
-            verbose("[+] Conversion complete");
-            return true;
+            return (outputHeight, characters);
         }
-        catch (Exception ex)
+
+        private (int OutputHeight, Dictionary<int, Bitmap> Characters) RenderAntiAliased(
+            FontFamily fontFamily, List<int> failed)
         {
-            Console.Error.WriteLine($"error: conversion failed for '{inputPath}': {ex.Message}");
-            return false;
+            var height = options.Height ?? 8;
+            var fontSize = Math.Max(48, height * 8);
+            var font = fontFamily.CreateFont(fontSize);
+            verbose($"[+] Anti-aliased mode: render {fontSize}px -> {height} row FLF");
+
+            var characters = new Dictionary<int, Bitmap>();
+            var maxWidth = 0;
+            verbose($"[+] Rendering {FlfWriter.RequiredCharacters.Length} characters...");
+            foreach (var charCode in FlfWriter.RequiredCharacters)
+            {
+                var bitmap = RenderAntiAliasedGlyph(font, charCode, height, 0, failed);
+                characters[charCode] = bitmap;
+                if (bitmap.Width > maxWidth) maxWidth = bitmap.Width;
+            }
+
+            if (options.Monospace && maxWidth > 0)
+            {
+                // Second pass at the shared width; glyphs that already failed keep their
+                // blank placeholder (FormatCharacter pads it to the monospace width).
+                var alreadyFailed = failed.ToHashSet();
+                foreach (var charCode in FlfWriter.RequiredCharacters.Where(c => !alreadyFailed.Contains(c)))
+                {
+                    characters[charCode] = RenderAntiAliasedGlyph(font, charCode, height, maxWidth, failed);
+                }
+            }
+
+            return (height, characters);
+        }
+
+        private Bitmap RenderAntiAliasedGlyph(Font font, int charCode, int height, int maxWidth, List<int> failed)
+        {
+            try
+            {
+                return rasterizer.RenderAntiAliased(font, (char)charCode, height, maxWidth);
+            }
+            catch (Exception ex)
+            {
+                ReportGlyphFailure(charCode, ex, failed);
+                var width = Math.Max(1, maxWidth);
+                return new Bitmap
+                {
+                    Width = width,
+                    Height = height,
+                    Pixels = Enumerable.Range(0, height).Select(_ => new double[width]).ToArray(),
+                };
+            }
+        }
+
+        private void ReportGlyphFailure(int charCode, Exception ex, List<int> failed)
+        {
+            failed.Add(charCode);
+            error.WriteLine($"[!] Failed to render character {charCode} ({(char)charCode}): {ex.Message}");
         }
     }
 }
